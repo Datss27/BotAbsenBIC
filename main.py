@@ -17,13 +17,15 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram.constants import ParseMode
-import random
+from aiohttp import web
+
 
 # ======= [CONFIG] =======
 ADMIN_ID = 7952198349
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PASSWORD_GLOBAL = os.getenv("PASSWORD_GLOBAL")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+PORT = int(os.getenv("PORT", 8443))
 os.makedirs("cache", exist_ok=True)
 
 # ======= [PENGGUNA] =======
@@ -93,22 +95,6 @@ def load_ucapan():
             return json.load(f)
     except:
         return ["👍 Good day jo, so cukup 😂✌️"]        
-        
-async def cek_webhook_info():
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getWebhookInfo"
-    try:
-        resp = requests.get(url)
-        if resp.ok:
-            data = resp.json().get("result", {})
-            print("🔍 Webhook Info:")
-            print(f"🌐 URL          : {data.get('url')}")
-            print(f"📦 Pending Count: {data.get('pending_update_count')}")
-            print(f"✅ Last Error   : {data.get('last_error_message')}")
-        else:
-            print("⚠️ Gagal mengambil info webhook.")
-    except Exception as e:
-        print(f"❌ Error saat cek webhook: {e}")
-
 
 # ======= [ABSEN] =======
 def ambil_rekapan_absen_awal_bulan(username, user_id):
@@ -319,7 +305,7 @@ async def kirim_rekap_ke_semua():
             img_buffer = buat_gambar_absensi(data, alias)
             await bot.send_photo(chat_id=chat_id, photo=img_buffer, filename=f"Rekap_{alias}.png")
             ucapan_list = load_ucapan()
-            await update.message.reply_text(random.choice(ucapan_list))
+            await bot.send_message(chat_id=chat_id, text=random.choice(load_ucapan()))
             report_success.append(f"✅ {alias}")
         except Exception as e:
             await bot.send_message(chat_id=chat_id, text=f"{alias}: Gagal kirim rekap: {str(e)}")
@@ -416,18 +402,13 @@ async def loop_cek_absen_pulang(bot: Bot):
     print("🛑 Loop cek absen pulang selesai.")
 
 # ======= [WEBHOOK CHECK STARTUP] =======
-async def cek_webhook_info():
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getWebhookInfo"
-    try:
-        resp = requests.get(url)
-        if resp.ok:
-            data = resp.json().get("result", {})
-            print("🔍 Webhook Info:")
-            print(f"🌐 URL          : {data.get('url')}")
-            print(f"📦 Pending Count: {data.get('pending_update_count')}")
-            print(f"✅ Last Error   : {data.get('last_error_message')}")
-    except Exception as e:
-        print(f"❌ Error saat cek webhook: {e}")
+async def telegram_webhook(request):
+    if request.match_info.get('token') != BOT_TOKEN:
+        return web.Response(status=403)
+    data = await request.json()
+    update = Update.de_json(data, bot)
+    await app.update_queue.put(update)
+    return web.Response(text="OK")
         
 
 # ======= [STARTUP & MAIN] =======
@@ -448,23 +429,25 @@ async def on_startup(app):
     scheduler.add_job(ping_bot, CronTrigger(hour=15, minute=59))
     scheduler.add_job(lambda: asyncio.create_task(loop_cek_absen_pulang(app.bot)), CronTrigger(hour=16, minute=0))
     
-    # CEK WEBHOOK
-    scheduler.add_job(cek_webhook_info)
-    
     scheduler.start()
     
     await app.bot.set_webhook(WEBHOOK_URL)
     print(f"✅ Webhook aktif di: {WEBHOOK_URL}")
 
+bot = Bot(BOT_TOKEN)
+app = ApplicationBuilder().token(BOT_TOKEN)\
+        .post_init(lambda _: asyncio.create_task(on_startup()))\
+        .build()
+
+# register commands
+app.add_handler(CommandHandler("rekap", rekap))
+app.add_handler(CommandHandler("semua", semua))
+
+# aiohttp server
+web_app = web.Application()
+web_app.router.add_post('/webhook', telegram_webhook)
+web_app.router.add_get('/ping', lambda r: web.Response(text="pong"))
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    app = ApplicationBuilder().token(BOT_TOKEN).post_init(on_startup).build()
-    app.add_handler(CommandHandler("rekap", rekap))
-    app.add_handler(CommandHandler("semua", semua))
-
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=int(os.getenv("PORT", 8443)),
-        webhook_url=WEBHOOK_URL,
-        webhook_path="/webhook"
-    )
+    web.run_app(web_app, host="0.0.0.0", port=PORT)
