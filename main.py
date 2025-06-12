@@ -444,6 +444,10 @@ if __name__ == "__main__":
         app.add_handler(CommandHandler("rekap", rekap))
         app.add_handler(CommandHandler("semua", semua))
 
+        # Initialize & start the application (dispatcher, job queue, etc)
+        await app.initialize()
+        await app.start()
+        
         # Run startup tasks (scheduler + webhook)
         await on_startup(app)
 
