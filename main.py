@@ -120,7 +120,7 @@ def ambil_rekapan_absen_awal_bulan(username, user_id):
         print("🧪 Login dengan:", {"username": username, "password": PASSWORD_GLOBAL})
         print("🪵 Response login:", res.status_code, res.text[:500])
 
-        if "<title>WEB REPORT IC</title>" not in res.text:
+        if "web report ic" not in res.text.lower():
             raise Exception("⚠️ Gagal login: Periksa username/password")
 
         cache["cookies"] = session.cookies.get_dict()
