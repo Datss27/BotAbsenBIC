@@ -405,9 +405,10 @@ async def loop_cek_absen_pulang(bot: Bot):
 async def telegram_webhook(request):
     if request.match_info.get('token') != BOT_TOKEN:
         return web.Response(status=403)
+
     data = await request.json()
-    update = Update.de_json(data, bot)
-    await app.update_queue.put(update)
+    update = Update.de_json(data, request.app["bot_app"].bot)
+    await request.app["bot_app"].update_queue.put(update)
     return web.Response(text="OK")
         
 
@@ -450,4 +451,18 @@ web_app.router.add_get('/ping', lambda r: web.Response(text="pong"))
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
+
+    app = ApplicationBuilder().token(BOT_TOKEN)\
+        .post_init(lambda _: asyncio.create_task(on_startup()))\
+        .build()
+
+    # aiohttp server
+    web_app = web.Application()
+    web_app["bot_app"] = app  # <=== simpan bot app agar bisa dipakai di handler webhook
+    web_app.router.add_post(f'/{BOT_TOKEN}', telegram_webhook)  # endpoint harus cocok dengan setWebhook
+    web_app.router.add_get('/ping', lambda r: web.Response(text="pong"))
+
+    app.add_handler(CommandHandler("rekap", rekap))
+    app.add_handler(CommandHandler("semua", semua))
+
     web.run_app(web_app, host="0.0.0.0", port=PORT)
