@@ -424,21 +424,24 @@ async def on_startup(app):
 
     scheduler.start()
 
-    await app.bot.set_webhook(WEBHOOK_URL)
-    print(f"✅ Webhook aktif di: {WEBHOOK_URL}")
+    # ✅ SET WEBHOOK PAKAI /{BOT_TOKEN}
+    full_url = f"{WEBHOOK_URL}/{BOT_TOKEN}"
+    await app.bot.set_webhook(full_url)
+    print(f"✅ Webhook aktif di: {full_url}")
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     async def startup_and_run():
+        # Build app
         app = ApplicationBuilder().token(BOT_TOKEN).build()
         app.add_handler(CommandHandler("rekap", rekap))
         app.add_handler(CommandHandler("semua", semua))
 
-        # Jalankan tugas startup
+        # Jalankan scheduler + webhook register
         await on_startup(app)
 
-        # Setup aiohttp web server
+        # Siapkan web server aiohttp
         web_app = web.Application()
         web_app["bot_app"] = app
         web_app.router.add_post(f'/{BOT_TOKEN}', telegram_webhook)
@@ -451,8 +454,8 @@ if __name__ == "__main__":
 
         print(f"🌐 Server running on port {PORT}")
 
-        # Jangan run_polling — biarkan webhook saja yg bekerja
+        # Keep-alive loop (no polling since we use webhook)
         while True:
-            await asyncio.sleep(3600)  # biar tetap hidup
+            await asyncio.sleep(3600)
 
     asyncio.run(startup_and_run())
