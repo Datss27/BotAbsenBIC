@@ -412,57 +412,45 @@ async def telegram_webhook(request):
     return web.Response(text="OK")
         
 
-# ======= [STARTUP & MAIN] =======
 async def on_startup(app):
-    #set time zone
     scheduler = AsyncIOScheduler(timezone="Asia/Jakarta")
-    
-    # ======= [DAFTAR TUGAS OTOMATIS] =======
-    # KIRIM REKAPAN KE SEMUA
+
     scheduler.add_job(ping_bot, CronTrigger(hour=21, minute=59))
     scheduler.add_job(kirim_rekap_ke_semua, trigger="cron", hour=22, minute=0)
-    
-    # CEK ABSEN DATANG
     scheduler.add_job(ping_bot, CronTrigger(hour=5, minute=59))
     scheduler.add_job(lambda: asyncio.create_task(loop_cek_absen_masuk(app.bot)), CronTrigger(hour=6, minute=0))
-    
-    # CEK ABSEN PULANG
     scheduler.add_job(ping_bot, CronTrigger(hour=15, minute=59))
     scheduler.add_job(lambda: asyncio.create_task(loop_cek_absen_pulang(app.bot)), CronTrigger(hour=16, minute=0))
-    
+
     scheduler.start()
-    
+
     await app.bot.set_webhook(WEBHOOK_URL)
     print(f"✅ Webhook aktif di: {WEBHOOK_URL}")
 
-bot = Bot(BOT_TOKEN)
-app = ApplicationBuilder().token(BOT_TOKEN)\
-        .post_init(lambda _: asyncio.create_task(on_startup()))\
-        .build()
 
-# register commands
-app.add_handler(CommandHandler("rekap", rekap))
-app.add_handler(CommandHandler("semua", semua))
-
-# aiohttp server
-web_app = web.Application()
-web_app.router.add_post('/webhook', telegram_webhook)
-web_app.router.add_get('/ping', lambda r: web.Response(text="pong"))
-
-if __name__ == "__main__":
+async def main():
     logging.basicConfig(level=logging.INFO)
 
     app = ApplicationBuilder().token(BOT_TOKEN)\
-        .post_init(lambda _: asyncio.create_task(on_startup()))\
+        .post_init(lambda app: asyncio.create_task(on_startup(app)))\
         .build()
-
-    # aiohttp server
-    web_app = web.Application()
-    web_app["bot_app"] = app  # <=== simpan bot app agar bisa dipakai di handler webhook
-    web_app.router.add_post(f'/{BOT_TOKEN}', telegram_webhook)  # endpoint harus cocok dengan setWebhook
-    web_app.router.add_get('/ping', lambda r: web.Response(text="pong"))
 
     app.add_handler(CommandHandler("rekap", rekap))
     app.add_handler(CommandHandler("semua", semua))
 
-    web.run_app(web_app, host="0.0.0.0", port=PORT)
+    web_app = web.Application()
+    web_app["bot_app"] = app
+    web_app.router.add_post(f'/{BOT_TOKEN}', telegram_webhook)
+    web_app.router.add_get('/ping', lambda r: web.Response(text="pong"))
+
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+
+    print(f"🌐 Server running on port {PORT}")
+    await app.run_polling(close_loop=False)  # Needed to process updates from webhook
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
