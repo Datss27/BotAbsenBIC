@@ -117,8 +117,12 @@ def ambil_rekapan_absen_awal_bulan(username, user_id):
     else:
         print(f"🔐 Login ulang untuk {user_id}")
         res = session.post(login_url, data={"username": username, "password": PASSWORD_GLOBAL, "ipaddr": ""})
-        if "login" in res.text.lower():
-            raise Exception("⚠️ Gagal login: Periksa username/password")
+        print("🧪 Login dengan:", {"username": username, "password": PASSWORD_GLOBAL})
+        print("🪵 Response login:", res.status_code, res.text[:500])
+
+        if "berhasil" not in res.text.lower():
+            raise Exception("⚠️ Gagal login: Respon tidak sesuai. Periksa username/password.\n" + res.text[:500])
+
         cache["cookies"] = session.cookies.get_dict()
         cache["session_time"] = now
 
