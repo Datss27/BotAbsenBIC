@@ -40,7 +40,6 @@ PENGGUNA = {
     5512376425: {"username": "2015344315", "alias": "Kevin Makikama"},
     1341142195: {"username": "2015565161", "alias": "Elshadai Tampi"}
 }
-alias = PENGGUNA.get(user_id, {}).get("alias", str(user_id))
 
 # ======= [CACHE FUNCTIONS] =======
 def user_cache_path(user_id):
