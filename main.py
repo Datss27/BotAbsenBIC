@@ -8,6 +8,7 @@ import requests
 import aiohttp
 import asyncio
 import random
+import datetime
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
