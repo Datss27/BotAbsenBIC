@@ -128,11 +128,11 @@ def ambil_rekapan_absen_awal_bulan(username, user_id):
 
     # Ambil halaman absen
     absen_page = session.get(absen_url)
-    if "login" in absen_page.text.lower():
+    if "502 Bad Gateway" in absen_page.text.lower():
         print(f"🔄 Session expired, login ulang untuk {user_id}")
         session = requests.Session()
         res = session.post(login_url, data={"username": username, "password": PASSWORD_GLOBAL, "ipaddr": ""})
-        if "login" in res.text.lower():
+        if "web report ic" not in res.text.lower():
             raise Exception("⚠️ Session expired dan login ulang gagal")
         cache["cookies"] = session.cookies.get_dict()
         cache["session_time"] = time.time()
