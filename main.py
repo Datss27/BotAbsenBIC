@@ -57,11 +57,11 @@ def load_user_cache(user_id):
         valid_absen = "absen_data" in cache and now - cache.get("absen_time", 0) < 900
         if not valid_session and not valid_absen:
             os.remove(path)
-            print(f"🧹 Cache {alias} dihapus (expired semua)")
+            print(f"🧹 Cache {user_id} dihapus (expired semua)")
             return {}
         return cache
     except Exception as e:
-        print(f"⚠️ Gagal baca cache {alias}: {e}")
+        print(f"⚠️ Gagal baca cache {user_id}: {e}")
         os.remove(path)
         return {}
 
@@ -106,16 +106,16 @@ def ambil_rekapan_absen_awal_bulan(username, user_id):
     now = time.time()
 
     if "absen_data" in cache and now - cache.get("absen_time", 0) < 900:
-        print(f"💾 Gunakan absen cache untuk {alias}")
+        print(f"💾 Gunakan absen cache untuk {user_id}")
         return cache["absen_data"]
 
     # Bangun sesi dari cookie
     session = requests.Session()
     if "cookies" in cache and now - cache.get("session_time", 0) < 3600:
         session.cookies.update(cache["cookies"])
-        print(f"🍪 Menggunakan session dari cookie cache untuk {alias}")
+        print(f"🍪 Menggunakan session dari cookie cache untuk {user_id}")
     else:
-        print(f"🔐 Login ulang untuk {alias}")
+        print(f"🔐 Login ulang untuk {user_id}")
         res = session.post(login_url, data={"username": username, "password": PASSWORD_GLOBAL, "ipaddr": ""})
         print("🧪 Login dengan:", {"username": username, "password": PASSWORD_GLOBAL})
         print("🪵 Response login:", res.status_code, res.text[:500])
@@ -129,7 +129,7 @@ def ambil_rekapan_absen_awal_bulan(username, user_id):
     # Ambil halaman absen
     absen_page = session.get(absen_url)
     if "502 Bad Gateway" in absen_page.text.lower():
-        print(f"🔄 Session expired, login ulang untuk {alias}")
+        print(f"🔄 Session expired, login ulang untuk {user_id}")
         session = requests.Session()
         res = session.post(login_url, data={"username": username, "password": PASSWORD_GLOBAL, "ipaddr": ""})
         if "web report ic" not in res.text.lower():
