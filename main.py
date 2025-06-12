@@ -427,30 +427,22 @@ async def on_startup(app):
     await app.bot.set_webhook(WEBHOOK_URL)
     print(f"✅ Webhook aktif di: {WEBHOOK_URL}")
 
-
-async def main():
+if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
-    app = ApplicationBuilder().token(BOT_TOKEN)\
-        .post_init(lambda app: asyncio.create_task(on_startup(app)))\
-        .build()
-
+    # Inisialisasi Telegram Application hanya sekali
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("rekap", rekap))
     app.add_handler(CommandHandler("semua", semua))
 
+    # Tambahkan ke app aiohttp
     web_app = web.Application()
     web_app["bot_app"] = app
     web_app.router.add_post(f'/{BOT_TOKEN}', telegram_webhook)
-    web_app.router.add_get('/ping', lambda r: web.Response(text="pong"))
+    web_app.router.add_get("/ping", lambda r: web.Response(text="pong"))
 
-    runner = web.AppRunner(web_app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
+    # Jadwalkan on_startup tanpa run_until_complete
+    asyncio.get_event_loop().create_task(on_startup(app))
 
-    print(f"🌐 Server running on port {PORT}")
-    await app.run_polling(close_loop=False)  # Needed to process updates from webhook
-
-
-if __name__ == "__main__":
-    asyncio.run(main())
+    # Jalankan server aiohttp
+    web.run_app(web_app, host="0.0.0.0", port=PORT)
