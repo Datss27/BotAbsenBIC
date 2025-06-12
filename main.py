@@ -424,8 +424,8 @@ async def on_startup(app):
 
     scheduler.start()
 
-    # ✅ SET WEBHOOK PAKAI /{BOT_TOKEN}
-    full_url = f"{WEBHOOK_URL}/{BOT_TOKEN}"
+    # ✅ SET WEBHOOK PAKAI /webhook/<TOKEN>
+    full_url = f"{WEBHOOK_URL}/webhook/{BOT_TOKEN}"
     await app.bot.set_webhook(full_url)
     print(f"✅ Webhook aktif di: {full_url}")
 
@@ -438,13 +438,14 @@ if __name__ == "__main__":
         app.add_handler(CommandHandler("rekap", rekap))
         app.add_handler(CommandHandler("semua", semua))
 
-        # Jalankan scheduler + webhook register
         await on_startup(app)
 
-        # Siapkan web server aiohttp
+        # Setup aiohttp
         web_app = web.Application()
         web_app["bot_app"] = app
-        web_app.router.add_post(f'/{BOT_TOKEN}', telegram_webhook)
+
+        # ✅ REGISTER endpoint yang cocok dengan set_webhook
+        web_app.router.add_post(f'/webhook/{BOT_TOKEN}', telegram_webhook)
         web_app.router.add_get("/ping", lambda r: web.Response(text="pong"))
 
         runner = web.AppRunner(web_app)
@@ -454,7 +455,7 @@ if __name__ == "__main__":
 
         print(f"🌐 Server running on port {PORT}")
 
-        # Keep-alive loop (no polling since we use webhook)
+        # Loop biar service tetap hidup
         while True:
             await asyncio.sleep(3600)
 
