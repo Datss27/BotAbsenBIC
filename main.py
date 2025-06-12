@@ -121,7 +121,7 @@ def ambil_rekapan_absen_awal_bulan(username, user_id):
         print(f"🔐 Login ulang untuk {user_id}")
         res = session.post(login_url, data={"username": username, "password": PASSWORD_GLOBAL, "ipaddr": ""})
         print("🧪 Login dengan:", {"username": username, "password": PASSWORD_GLOBAL})
-        print("🪵 Response login:", res.status_code, res.text[:500])
+        print("🪵 berhasil login {user_id}")
 
         if "web report ic" not in res.text.lower():
             raise Exception("⚠️ Gagal login: Periksa username/password")
