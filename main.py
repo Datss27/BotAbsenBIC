@@ -20,6 +20,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram.constants import ParseMode
 from aiohttp import web
 from pytz import timezone
+from telegram.error import TelegramError, BadRequest
 
 
 # ======= [CONFIG] =======
@@ -295,35 +296,50 @@ async def semua(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ======= [FUNGSI OTOMATIS] =======
 async def kirim_rekap_ke_semua():
-    print(f"⚡ [Scheduler] Kirim otomatis {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    bot = Bot(token=BOT_TOKEN)
+    waktu_skrg = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(f"⚡ [Scheduler] Kirim otomatis {waktu_skrg}")
+
     report_success = []
     report_fail = []
 
-    for chat_id, akun in PENGGUNA.items():
-        username = akun["username"]
-        alias = akun["alias"]
+    async with Bot(token=BOT_TOKEN) as bot:
+        for chat_id, akun in PENGGUNA.items():
+            username = akun["username"]
+            alias = akun["alias"]
+
+            try:
+                data = ambil_rekapan_absen_awal_bulan(username, chat_id)
+                if not data:
+                    await bot.send_message(chat_id=chat_id, text=f"📭 {alias}: Tidak ada data bulan ini.")
+                    report_fail.append(f"❌ {alias}: Data kosong")
+                    continue
+
+                img_buffer = buat_gambar_absensi(data, alias)
+                await bot.send_photo(chat_id=chat_id, photo=img_buffer, filename=f"Rekap_{alias}.png")
+
+                ucapan = random.choice(load_ucapan())
+                await bot.send_message(chat_id=chat_id, text=ucapan)
+                report_success.append(f"✅ {alias}")
+
+            except BadRequest as e:
+                if "chat not found" in str(e).lower():
+                    report_fail.append(f"❌ {alias}: Chat ID tidak ditemukan (mungkin belum /start)")
+                else:
+                    report_fail.append(f"❌ {alias}: BadRequest - {str(e)}")
+            except TelegramError as e:
+                report_fail.append(f"❌ {alias}: Telegram error - {str(e)}")
+            except Exception as e:
+                report_fail.append(f"❌ {alias}: {str(e)}")
+
+        # Kirim ringkasan ke admin
+        summary = f"<b>📊 Rekap Otomatis Selesai</b>\n🕒 {waktu_skrg} WIB\n\n"
+        summary += f"<b>✅ Berhasil:</b>\n" + ("\n".join(report_success) if report_success else "Tidak ada") + "\n\n"
+        summary += f"<b>❌ Gagal:</b>\n" + ("\n".join(report_fail) if report_fail else "Tidak ada")
+
         try:
-            data = ambil_rekapan_absen_awal_bulan(username, chat_id)
-            if not data:
-                await bot.send_message(chat_id=chat_id, text=f"{alias}: Tidak ada data bulan ini.")
-                report_fail.append(f"❌ {alias}: Tidak ada data")
-                continue
-            img_buffer = buat_gambar_absensi(data, alias)
-            await bot.send_photo(chat_id=chat_id, photo=img_buffer, filename=f"Rekap_{alias}.png")
-            ucapan_list = load_ucapan()
-            await bot.send_message(chat_id=chat_id, text=random.choice(load_ucapan()))
-            report_success.append(f"✅ {alias}")
+            await bot.send_message(chat_id=ADMIN_ID, text=summary, parse_mode=ParseMode.HTML)
         except Exception as e:
-            await bot.send_message(chat_id=chat_id, text=f"{alias}: Gagal kirim rekap: {str(e)}")
-            report_fail.append(f"❌ {alias}: {str(e)}")
-
-    # Kirim ringkasan ke admin
-    summary = f"📊 Rekap Otomatis Selesai\n\n"
-    summary += f"✅ Berhasil:\n" + ("\n".join(report_success) if report_success else "Tidak ada") + "\n\n"
-    summary += f"❌ Gagal:\n" + ("\n".join(report_fail) if report_fail else "Tidak ada")
-
-    await bot.send_message(chat_id=ADMIN_ID, text=summary, parse_mode=ParseMode.HTML)
+            print(f"⚠️ Gagal kirim rekap ke admin: {e}")
 
 async def loop_cek_absen_masuk(bot: Bot):
     print("⏳ Mulai loop cek absen masuk (07–11 tiap 5 menit)")
