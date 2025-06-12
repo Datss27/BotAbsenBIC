@@ -423,17 +423,18 @@ async def telegram_webhook(request):
         
 
 async def on_startup(app):
-    scheduler = AsyncIOScheduler(timezone="Asia/Jakarta")
+    scheduler = AsyncIOScheduler(timezone=timezone("Asia/Jakarta"))  # Scheduler pakai WIB
 
-    # Schedule jobs as before...
-    scheduler.add_job(ping_bot, CronTrigger(hour=21, minute=59))
-    scheduler.add_job(kirim_rekap_ke_semua, CronTrigger(hour=22, minute=0))
-    scheduler.add_job(ping_bot, CronTrigger(hour=5, minute=59))
-    scheduler.add_job(lambda: asyncio.create_task(loop_cek_absen_masuk(app.bot)), CronTrigger(hour=6, minute=0))
-    scheduler.add_job(ping_bot, CronTrigger(hour=15, minute=59))
-    scheduler.add_job(lambda: asyncio.create_task(loop_cek_absen_pulang(app.bot)), CronTrigger(hour=16, minute=0))
+    # Semua trigger juga harus pakai WIB secara eksplisit
+    wib = timezone("Asia/Jakarta")
+    scheduler.add_job(ping_bot, CronTrigger(hour=21, minute=59, timezone=wib))
+    scheduler.add_job(kirim_rekap_ke_semua, CronTrigger(hour=22, minute=0, timezone=wib))
+    scheduler.add_job(ping_bot, CronTrigger(hour=5, minute=59, timezone=wib))
+    scheduler.add_job(lambda: asyncio.create_task(loop_cek_absen_masuk(app.bot)), CronTrigger(hour=6, minute=0, timezone=wib))
+    scheduler.add_job(ping_bot, CronTrigger(hour=15, minute=59, timezone=wib))
+    scheduler.add_job(lambda: asyncio.create_task(loop_cek_absen_pulang(app.bot)), CronTrigger(hour=16, minute=0, timezone=wib))
+
     scheduler.start()
-
     # Set up Telegram webhook
     webhook_endpoint = f"/webhook/{BOT_TOKEN}"
     full_webhook_url = f"{WEBHOOK_URL}{webhook_endpoint}"
