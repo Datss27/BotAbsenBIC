@@ -25,7 +25,8 @@ ADMIN_ID = 7952198349
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PASSWORD_GLOBAL = os.getenv("PASSWORD_GLOBAL")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-PORT = int(os.getenv("PORT", 8443))
+# Use port 8080 for webhook
+PORT = int(os.getenv("PORT", 8080))
 os.makedirs("cache", exist_ok=True)
 
 # ======= [PENGGUNA] =======
@@ -403,59 +404,65 @@ async def loop_cek_absen_pulang(bot: Bot):
 
 # ======= [WEBHOOK CHECK STARTUP] =======
 async def telegram_webhook(request):
-    if request.match_info.get('token') != BOT_TOKEN:
+    # Verify token in URL
+    token = request.match_info.get('token')
+    if token != BOT_TOKEN:
         return web.Response(status=403)
 
     data = await request.json()
-    update = Update.de_json(data, request.app["bot_app"].bot)
-    await request.app["bot_app"].update_queue.put(update)
+    update = Update.de_json(data, request.app['bot_app'].bot)
+    # Put incoming update into the application's queue
+    await request.app['bot_app'].update_queue.put(update)
     return web.Response(text="OK")
         
 
 async def on_startup(app):
     scheduler = AsyncIOScheduler(timezone="Asia/Jakarta")
 
+    # Schedule jobs as before...
     scheduler.add_job(ping_bot, CronTrigger(hour=21, minute=59))
-    scheduler.add_job(kirim_rekap_ke_semua, trigger="cron", hour=22, minute=0)
+    scheduler.add_job(kirim_rekap_ke_semua, CronTrigger(hour=22, minute=0))
     scheduler.add_job(ping_bot, CronTrigger(hour=5, minute=59))
     scheduler.add_job(lambda: asyncio.create_task(loop_cek_absen_masuk(app.bot)), CronTrigger(hour=6, minute=0))
     scheduler.add_job(ping_bot, CronTrigger(hour=15, minute=59))
     scheduler.add_job(lambda: asyncio.create_task(loop_cek_absen_pulang(app.bot)), CronTrigger(hour=16, minute=0))
-
     scheduler.start()
 
-    # ✅ SET WEBHOOK PAKAI /webhook/<TOKEN>
-    full_url = f"{WEBHOOK_URL}/webhook/{BOT_TOKEN}"
-    await app.bot.set_webhook(full_url)
-    print(f"✅ Webhook aktif di: {full_url}")
+    # Set up Telegram webhook
+    webhook_endpoint = f"/webhook/{BOT_TOKEN}"
+    full_webhook_url = f"{WEBHOOK_URL}{webhook_endpoint}"
+    await app.bot.set_webhook(full_webhook_url)
+    print(f"✅ Webhook active at: {full_webhook_url}")
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     async def startup_and_run():
-        # Build app
+        # Build the bot application
         app = ApplicationBuilder().token(BOT_TOKEN).build()
+        # Register command handlers
         app.add_handler(CommandHandler("rekap", rekap))
         app.add_handler(CommandHandler("semua", semua))
 
+        # Run startup tasks (scheduler + webhook)
         await on_startup(app)
 
-        # Setup aiohttp
+        # Create aiohttp web server for webhook
         web_app = web.Application()
-        web_app["bot_app"] = app
-
-        # ✅ REGISTER endpoint yang cocok dengan set_webhook
-        web_app.router.add_post(f'/webhook/{BOT_TOKEN}', telegram_webhook)
-        web_app.router.add_get("/ping", lambda r: web.Response(text="pong"))
+        web_app['bot_app'] = app
+        # Route webhook requests
+        web_app.router.add_post(f'/webhook/{{token}}', telegram_webhook)
+        # Health check endpoint
+        web_app.router.add_get('/ping', lambda r: web.Response(text='pong'))
 
         runner = web.AppRunner(web_app)
         await runner.setup()
-        site = web.TCPSite(runner, "0.0.0.0", PORT)
+        site = web.TCPSite(runner, '0.0.0.0', PORT)
         await site.start()
 
         print(f"🌐 Server running on port {PORT}")
 
-        # Loop biar service tetap hidup
+        # Keep the service alive
         while True:
             await asyncio.sleep(3600)
 
