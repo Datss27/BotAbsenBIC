@@ -264,7 +264,7 @@ async def rekap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     alias = akun["alias"]
 
     await update.message.reply_text(f"🚀 Menyiapkan rekap {alias}...")
-    await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} meminta rekap absensi")
+    await update.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} meminta rekap absensi")
     logging.info("mengirim rekap absensi {alias}")
     try:
         data = ambil_rekapan_absen_awal_bulan(username, chat_id)
