@@ -439,7 +439,7 @@ async def on_startup(app):
     scheduler.add_job(kirim_rekap_ke_semua, CronTrigger(hour=22, minute=0, timezone=WITA))
 
     # Tugas cek absensi
-    scheduler.add_job(ping_bot, CronTrigger(hour=06, minute=59, timezone=WITA))
+    scheduler.add_job(ping_bot, CronTrigger(hour=6, minute=59, timezone=WITA))
     scheduler.add_job(lambda: asyncio.create_task(cek_absen_masuk()),
                       CronTrigger(minute='*/5', hour='7-10', timezone=WITA))
     # Notifikasi lupa masuk pada 11:00
