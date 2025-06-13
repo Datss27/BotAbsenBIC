@@ -424,6 +424,23 @@ async def loop_cek_absen_pulang(bot: Bot):
     _save_status(status)
     print("🛑 Loop cek absen pulang selesai.")
 
+
+        
+
+async def on_startup(app):
+    loop = asyncio.get_event_loop()
+    wib = timezone("Asia/Jakarta")
+    scheduler = AsyncIOScheduler(timezone=timezone("Asia/Jakarta"))  # Scheduler pakai WIB
+    
+    scheduler.add_job(ping_bot, CronTrigger(hour=21, minute=59, timezone=wib))
+    scheduler.add_job(kirim_rekap_ke_semua, CronTrigger(hour=22, minute=0, timezone=wib))
+    scheduler.add_job(ping_bot, CronTrigger(hour=5, minute=59, timezone=wib))
+    scheduler.add_job(lambda: asyncio.create_task(loop_cek_absen_masuk(app.bot)), CronTrigger(hour=6, minute=0, timezone=wib))
+    scheduler.add_job(ping_bot, CronTrigger(hour=15, minute=59, timezone=wib))
+    scheduler.add_job(lambda: asyncio.create_task(loop_cek_absen_pulang(app.bot)), CronTrigger(hour=16, minute=0, timezone=wib))
+
+    scheduler.start()
+
 # ======= [WEBHOOK CHECK STARTUP] =======
 async def telegram_webhook(request):
     # Verify token in URL
@@ -436,26 +453,14 @@ async def telegram_webhook(request):
     # Put incoming update into the application's queue
     await request.app['bot_app'].update_queue.put(update)
     return web.Response(text="OK")
-        
-
-async def on_startup(app):
-    scheduler = AsyncIOScheduler(timezone=timezone("Asia/Jakarta"))  # Scheduler pakai WIB
-
-    # Semua trigger juga harus pakai WIB secara eksplisit
-    wib = timezone("Asia/Jakarta")
-    scheduler.add_job(ping_bot, CronTrigger(hour=21, minute=59, timezone=wib))
-    scheduler.add_job(kirim_rekap_ke_semua, CronTrigger(hour=22, minute=0, timezone=wib))
-    scheduler.add_job(ping_bot, CronTrigger(hour=5, minute=59, timezone=wib))
-    scheduler.add_job(lambda: asyncio.create_task(loop_cek_absen_masuk(app.bot)), CronTrigger(hour=6, minute=0, timezone=wib))
-    scheduler.add_job(ping_bot, CronTrigger(hour=15, minute=59, timezone=wib))
-    scheduler.add_job(lambda: asyncio.create_task(loop_cek_absen_pulang(app.bot)), CronTrigger(hour=16, minute=0, timezone=wib))
-
-    scheduler.start()
-    # Set up Telegram webhook
+    
+    # ======= [SET UP TELEGRAM WEBHOOK] =======
     webhook_endpoint = f"/webhook/{BOT_TOKEN}"
     full_webhook_url = f"{WEBHOOK_URL}{webhook_endpoint}"
     await app.bot.set_webhook(full_webhook_url)
     print(f"✅ Webhook active at: {full_webhook_url}")
+
+    
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
