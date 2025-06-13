@@ -242,6 +242,31 @@ def buat_gambar_absensi(data, alias):
     buffer.seek(0)
     return buffer
 
+#======= [UCAPAN] =======
+async def kirim_ucapan(update: Update):
+    ucapan_list = load_ucapan()
+    ucapan = random.choice(ucapan_list)
+
+    pesan = f"""
+*{ucapan}*
+
+📅 {datetime.now().strftime('%A, %d %B %Y')}
+"""
+    await update.message.reply_text(pesan, parse_mode=ParseMode.MARKDOWN)
+
+async def kirim_ucapan_ke(bot: Bot, chat_id: int):
+    ucapan_list = load_ucapan()
+    ucapan = random.choice(ucapan_list)
+
+    pesan = f"""
+🌟 *Ucapan Spesial Hari Ini* 🌟
+
+*{ucapan}*
+
+📅 {datetime.now().strftime('%A, %d %B %Y')}
+"""
+    await bot.send_message(chat_id=chat_id, text=pesan, parse_mode=ParseMode.MARKDOWN)
+    
 #======= [PING] =======
 async def ping_bot():
     async with aiohttp.ClientSession() as session:
@@ -274,7 +299,7 @@ async def rekap(update: Update, context: ContextTypes.DEFAULT_TYPE):
         img_buffer = buat_gambar_absensi(data, alias)
         await update.message.reply_photo(photo=img_buffer, filename=f"Rekap_{alias}.png")
         ucapan_list = load_ucapan()
-        await update.message.reply_text(random.choice(ucapan_list))
+        await kirim_ucapan(update)
     except Exception as e:
         await update.message.reply_text(f"Terjadi kesalahan: {str(e)}")
 
@@ -321,8 +346,7 @@ async def kirim_rekap_ke_semua():
                 img_buffer = buat_gambar_absensi(data, alias)
                 await bot.send_photo(chat_id=chat_id, photo=img_buffer, filename=f"Rekap_{alias}.png")
 
-                ucapan = random.choice(load_ucapan())
-                await bot.send_message(chat_id=chat_id, text=ucapan)
+                await kirim_ucapan_ke(bot, chat_id)
                 report_success.append(f"✅ {alias}")
 
             except BadRequest as e:
@@ -363,7 +387,7 @@ async def cek_absen_masuk():
             found = any(item["Tanggal"] == today_str for item in data)
             if found:
                 t = now.strftime("%H:%M")
-                label = " (⏰ Terlambat)" if now.hour >= 8 else ""
+                label = " (Terlambat trusss😂)" if now.hour >= 8 else ""
                 msg = f"✅ Absen masuk berhasil tercatat pukul {t}{label}"
                 await bot.send_message(chat_id=cid, text=msg)
                 await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} absen masuk berhasil pukul {t}")
@@ -385,7 +409,7 @@ async def cek_lupa_masuk():
         key = str(cid)
         if not status.get(key, {}).get("masuk"):
             await bot.send_message(chat_id=cid, text="ngana lupa absen maso bro❗❗❗")
-            await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} dia lupa absen maso😂")
+            await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} lupa absen maso😂")
             status.setdefault(key, {})["masuk"] = False
     _save_status(status)
     
@@ -418,16 +442,21 @@ async def cek_absen_pulang():
 
 async def cek_lupa_pulang():
     logging.info("[Loop] Mengecek lupa absen pulang...")
-    """
-    Notifikasi lupa absen pulang pada pukul 20:00 WITA
-    """
     status = _load_status()
     bot = Bot(token=BOT_TOKEN)
-    for cid in PENGGUNA:
+    for cid, acc in PENGGUNA.items():
         key = str(cid)
-        if not status.get(key, {}).get("pulang"):
+        masuk = status.get(key, {}).get("masuk")
+        pulang = status.get(key, {}).get("pulang")
+
+        if not pulang:
             await bot.send_message(chat_id=cid, text="ngana lupa absen pulang bro❗❗❗")
+            await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} lupa absen pulang😂")
             status.setdefault(key, {})["pulang"] = False
+
+        if not masuk and not pulang:
+            await bot.send_message(chat_id=cid, text="⚠️ ngana mangkir atau SKD ini bro 😂")
+            await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} lupa ba absen 😂")
     _save_status(status)
 
 async def on_startup(app):
