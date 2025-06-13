@@ -264,8 +264,8 @@ async def rekap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     alias = akun["alias"]
 
     await update.message.reply_text(f"🚀 Menyiapkan rekap {alias}...")
-    await update.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} meminta rekap absensi")
-    logging.info("mengirim rekap absensi {alias}")
+    await context.bot.send_message(chat_id=ADMIN_ID, text=f"👤 {alias} meminta rekap absensi")
+    logging.info(f"[Rekap] {alias} meminta rekap absensi")
     try:
         data = ambil_rekapan_absen_awal_bulan(username, chat_id)
         if not data:
@@ -299,7 +299,7 @@ async def semua(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ======= [FUNGSI OTOMATIS] =======
 async def kirim_rekap_ke_semua():
-    logging.info("mengirim rekap otomatis pada semua")
+    logging.info(f"[kirim_rekap_ke_semua] mengirim rekap absensi ke semua")
     waktu_skrg = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     print(f"⚡ [Scheduler] Kirim otomatis {waktu_skrg}")
 
