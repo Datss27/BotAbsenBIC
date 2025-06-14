@@ -469,19 +469,27 @@ async def on_startup(app):
 
     # Tugas cek absensi
     scheduler.add_job(ping_bot, CronTrigger(hour=6, minute=59, timezone=WITA))
-    scheduler.add_job(lambda: asyncio.create_task(cek_absen_masuk()),
-                      CronTrigger(minute='*/5', hour='7-10', timezone=WITA))
-    # Notifikasi lupa masuk pada 11:00
-    scheduler.add_job(lambda: asyncio.create_task(cek_lupa_masuk()),
-                      CronTrigger(hour=11, minute=0, timezone=WITA))
+    # Loop cek masuk
+    scheduler.add_job(
+        cek_absen_masuk,
+        CronTrigger(minute='*/5', hour='7-10', timezone=WITA)
+    )
+    # Notifikasi lupa masuk
+    scheduler.add_job(
+        cek_lupa_masuk,
+        CronTrigger(hour=11, minute=0, timezone=WITA)
+    )
     # Loop cek pulang setiap 5 menit 16-20
     scheduler.add_job(ping_bot, CronTrigger(hour=15, minute=59, timezone=WITA))
-    scheduler.add_job(lambda: asyncio.create_task(cek_absen_pulang()),
-                      CronTrigger(minute='*/5', hour='16-19', timezone=WITA))
-    # Notifikasi lupa pulang pada 20:00
-    scheduler.add_job(lambda: asyncio.create_task(cek_lupa_pulang()),
-                      CronTrigger(hour=20, minute=0, timezone=WITA))
-    
+    scheduler.add_job(
+        cek_absen_pulang,
+        CronTrigger(minute='*/5', hour='16-19', timezone=WITA)
+    )
+    # Notifikasi lupa pulang
+    scheduler.add_job(
+    cek_lupa_pulang,
+    CronTrigger(hour=20, minute=0, timezone=WITA)
+    )
 
     scheduler.start()
     logging.info("[Scheduler] Semua tugas dijalankan.")
