@@ -30,8 +30,11 @@ PASSWORD_GLOBAL = os.getenv("PASSWORD_GLOBAL")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 # Use port 8080 for webhook
 PORT = int(os.getenv("PORT", 8080))
-os.makedirs("cache", exist_ok=True)
+CACHE_DIR = "cache"
+CACHE_FILE = os.path.join(CACHE_DIR, "sessions.pkl")
+os.makedirs(CACHE_DIR, exist_ok=True)
 WITA = timezone("Asia/Makassar")
+SESSION_TTL = 3600  # seconds
 
 # ======= [PENGGUNA] =======
 PENGGUNA = {
@@ -46,32 +49,53 @@ PENGGUNA = {
 }
 
 # ======= [CACHE FUNCTIONS] =======
-def user_cache_path(user_id):
-    return os.path.join("cache", f"{user_id}.pkl")
-
-def load_user_cache(user_id):
-    path = user_cache_path(user_id)
-    if not os.path.exists(path):
+def load_all_sessions():
+    """
+    Load all user session caches, purge expired entries automatically.
+    """
+    if not os.path.exists(CACHE_FILE):
         return {}
     try:
-        with open(path, "rb") as f:
-            cache = pickle.load(f)
-        now = time.time()
-        valid_session = "session" in cache and now - cache.get("session_time", 0) < 3600
-        valid_absen = "absen_data" in cache and now - cache.get("absen_time", 0) < 900
-        if not valid_session and not valid_absen:
-            os.remove(path)
-            print(f"🧹 Cache {user_id} dihapus (expired semua)")
-            return {}
-        return cache
-    except Exception as e:
-        print(f"⚠️ Gagal baca cache {user_id}: {e}")
-        os.remove(path)
+        with open(CACHE_FILE, "rb") as f:
+            sessions = pickle.load(f)
+    except Exception:
+        os.remove(CACHE_FILE)
         return {}
 
-def save_user_cache(user_id, cache):
-    with open(user_cache_path(user_id), "wb") as f:
-        pickle.dump(cache, f)
+    # Purge expired sessions
+    now = time.time()
+    expired = [uid for uid, entry in sessions.items() if now - entry.get("session_time", 0) >= SESSION_TTL]
+    for uid in expired:
+        sessions.pop(uid, None)
+        logging.info(f"🗑️ Purged expired session for user {uid}")
+    if expired:
+        save_all_sessions(sessions)
+    return sessions
+
+
+def save_all_sessions(sessions):
+    """
+    Save all user session caches to single file.
+    """
+    with open(CACHE_FILE, "wb") as f:
+        pickle.dump(sessions, f)
+
+
+def load_user_cache(user_id):
+    """
+    Return cached cookies for user_id if valid.
+    """
+    sessions = load_all_sessions()
+    return sessions.get(user_id, {})
+
+
+def save_user_cache(user_id, cookies):
+    """
+    Save cookies for user_id with current timestamp.
+    """
+    sessions = load_all_sessions()
+    sessions[user_id] = {"cookies": cookies, "session_time": time.time()}
+    save_all_sessions(sessions)
 
 def _status_path(): 
     return os.path.join("cache", "status.json")
@@ -106,44 +130,37 @@ def ambil_rekapan_absen_awal_bulan(username, user_id):
     login_url = "https://bicmdo.lalskomputer.my.id/idm_v2/req_masuk"
     absen_url = "https://bicmdo.lalskomputer.my.id/idm_v2/Api/get_absen"
 
+    # load session cache for this user
     cache = load_user_cache(user_id)
     now = time.time()
 
-    if "absen_data" in cache and now - cache.get("absen_time", 0) < 900:
-        print(f"💾 Gunakan absen cache untuk {user_id}")
-        return cache["absen_data"]
-
-    # Bangun sesi dari cookie
     session = requests.Session()
-    if "cookies" in cache and now - cache.get("session_time", 0) < 3600:
+    # reuse cookies if exist
+    if cache.get("cookies"):
         session.cookies.update(cache["cookies"])
-        print(f"🍪 Menggunakan session dari cookie cache untuk {user_id}")
+        logging.info(f"🍪 Using cached session for user {user_id}")
     else:
-        print(f"🔐 Login ulang untuk {user_id}")
+        # perform login
+        logging.info(f"🔐 Logging in for user {user_id}")
         res = session.post(login_url, data={"username": username, "password": PASSWORD_GLOBAL, "ipaddr": ""})
-        print("🧪 Login dengan:", {"username": username, "password": PASSWORD_GLOBAL})
-        print("🪵 berhasil login {user_id}")
-
         if "web report ic" not in res.text.lower():
-            raise Exception("⚠️ Gagal login: Periksa username/password")
-
-        cache["cookies"] = session.cookies.get_dict()
-        cache["session_time"] = now
+            raise Exception("⚠️ Failed login: check username/password")
+        save_user_cache(user_id, session.cookies.get_dict())
 
     # Ambil halaman absen
-    absen_page = session.get(absen_url)
-    if "502 Bad Gateway" in absen_page.text.lower():
-        print(f"🔄 Session expired, login ulang untuk {user_id}")
+    res = session.get(absen_url)
+    if '<table id="detailAbsen"' not in res.text:
+        # session expired server-side, re-login
+        logging.info(f"🔄 Session expired, re-login for user {user_id}")
         session = requests.Session()
-        res = session.post(login_url, data={"username": username, "password": PASSWORD_GLOBAL, "ipaddr": ""})
-        if "web report ic" not in res.text.lower():
-            raise Exception("⚠️ Session expired dan login ulang gagal")
-        cache["cookies"] = session.cookies.get_dict()
-        cache["session_time"] = time.time()
-        absen_page = session.get(absen_url)
+        res_login = session.post(login_url, data={"username": username, "password": PASSWORD_GLOBAL, "ipaddr": ""})
+        if "web report ic" not in res_login.text.lower():
+            raise Exception("⚠️ Session expired and re-login failed")
+        save_user_cache(user_id, session.cookies.get_dict())
+        res = session.get(absen_url)
 
     # Parsing data absensi
-    soup = BeautifulSoup(absen_page.text, "html.parser")
+    soup = BeautifulSoup(res.text, "html.parser")
     table = soup.find("table", {"id": "detailAbsen"})
     rows = table.find("tbody").find_all("tr") if table else []
 
@@ -151,14 +168,19 @@ def ambil_rekapan_absen_awal_bulan(username, user_id):
     awal_bulan = today.replace(day=1)
     data_bulan_ini = []
 
-    for row in rows:
+    row in rows:
         cols = [td.get_text(strip=True) for td in row.find_all("td")]
         if len(cols) >= 9:
             try:
                 tanggal = datetime.strptime(cols[3], "%d %B %Y")
                 if awal_bulan <= tanggal <= today:
-                    jam_in = cols[7][:5].replace(":", ".") if cols[7] else "-"
-                    jam_out = cols[8][:5].replace(":", ".") if cols[8] else "-"
+                    jam_in_raw = cols[7][:5] if cols[7] else "-"
+                    jam_out_raw = cols[8][:5] if cols[8] else "-"
+                    jam_in = jam_in_raw.replace(":", ".") if jam_in_raw != "-" else "-"
+                    jam_out = jam_out_raw.replace(":", ".") if jam_out_raw != "-" else "-"
+
+                    status_absen = "Terlambat" if jam_in_raw != "-" and jam_in_raw >= "08:00" else cols[6]
+
                     overtime = "-"
                     try:
                         if jam_in != "-" and jam_out != "-":
@@ -169,9 +191,10 @@ def ambil_rekapan_absen_awal_bulan(username, user_id):
                                 overtime = f"{durasi - 8:.2f} jam"
                     except:
                         overtime = "-"
+
                     data_bulan_ini.append({
                         "Tanggal": cols[3],
-                        "Status": cols[6],
+                        "Status": status_absen,
                         "In": jam_in,
                         "Out": jam_out,
                         "Overtime": overtime
@@ -179,9 +202,6 @@ def ambil_rekapan_absen_awal_bulan(username, user_id):
             except:
                 continue
 
-    cache["absen_data"] = data_bulan_ini
-    cache["absen_time"] = time.time()
-    save_user_cache(user_id, cache)
 
     return data_bulan_ini
 
@@ -370,31 +390,38 @@ async def kirim_rekap_ke_semua():
             print(f"⚠️ Gagal kirim rekap ke admin: {e}")
 
 async def cek_absen_masuk():
-    logging.info("[Loop] Mengecek absen masuk...")
-    """
-    Periksa absen masuk setiap 5 menit antara pukul 07:00-11:00 WITA
-    """
     status = _load_status()
     now = datetime.now(WITA)
     today_str = now.strftime("%d %B %Y")
     bot = Bot(token=BOT_TOKEN)
+
+    # Kumpulkan coroutine per user
+    tasks = []
     for cid, acc in PENGGUNA.items():
         key = str(cid)
         if status.get(key, {}).get("masuk"):
             continue
-        try:
-            data = ambil_rekapan_absen_awal_bulan(acc["username"], cid)
-            found = any(item["Tanggal"] == today_str for item in data)
-            if found:
-                t = now.strftime("%H:%M")
-                label = " (Terlambat trusss😂)" if now.hour >= 8 else ""
-                msg = f"✅ Absen masuk berhasil tercatat pukul {t}{label}"
-                await bot.send_message(chat_id=cid, text=msg)
-                await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} absen masuk berhasil pukul {t}")
-                status.setdefault(key, {})["masuk"] = True
-        except Exception as e:
-            logging.warning(f"Gagal cek absen masuk {acc['username']}: {e}")
-    _save_status(status)
+
+        async def _cek_user_masuk(cid=cid, acc=acc, key=key):
+            try:
+                data = ambil_rekapan_absen_awal_bulan(acc["username"], cid)
+                if any(item["Tanggal"] == today_str for item in data):
+                    t = now.strftime("%H:%M")
+                    label = " (Terlambat trusss😂)" if now.hour >= 8 else ""
+                    await bot.send_message(cid, f"✅ Absen masuk tercatat pukul {t}{label}")
+                    await bot.send_message(ADMIN_ID, f"👤 {acc['alias']} absen masuk pukul {t}")
+                    status.setdefault(key, {})["masuk"] = True
+            except Exception as e:
+                logging.warning(f"Gagal cek absen masuk {acc['username']}: {e}")
+
+        tasks.append(_cek_user_masuk())
+
+    if tasks:
+        # Jalankan semua task secara paralel
+        start = time.time()
+        await asyncio.gather(*tasks)
+        logging.info(f"[Loop] cek_absen_masuk selesai dalam {time.time() - start:.2f}s")
+        _save_status(status)
 
 async def cek_lupa_masuk():
     logging.info("[Loop] Mengecek lupa absen masuk...")
@@ -405,59 +432,96 @@ async def cek_lupa_masuk():
     bot = Bot(token=BOT_TOKEN)
     now = datetime.now(WITA)
     today_str = now.strftime("%d %B %Y")
-    for cid, acc in PENGGUNA.items():
+
+    tasks = []
+     for cid, acc in PENGGUNA.items():
         key = str(cid)
-        if not status.get(key, {}).get("masuk"):
-            await bot.send_message(chat_id=cid, text="ngana lupa absen maso bro❗❗❗")
-            await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} lupa absen maso😂")
-            status.setdefault(key, {})["masuk"] = False
-    _save_status(status)
+        # hanya yang belum absen masuk
+        if status.get(key, {}).get("masuk"):
+            continue
+        async def _cek_user_lupa(cid=cid, acc=acc, key=key):
+            try:
+                await bot.send_message(chat_id=cid, text="ngana lupa absen maso bro❗❗❗")
+                await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} lupa absen maso😂")
+                status.setdefault(key, {})["masuk"] = False
+            except Exception as e:
+                logging.warning(f"Gagal notifikasi lupa absen masuk {acc['username']}: {e}")
+
+        tasks.append(_cek_user_lupa())
+
+    if tasks:
+        start = time.time()
+        await asyncio.gather(*tasks)
+        logging.info(f"[Loop] cek_absen_masuk selesai dalam {time.time() - start:.2f}s")
+        _save_status(status)
     
 async def cek_absen_pulang():
-    logging.info("[Loop] Mengecek absen pulang...")
-    """
-    Periksa absen pulang setiap 5 menit antara pukul 16:00-20:00 WITA
-    """
     status = _load_status()
     now = datetime.now(WITA)
     today_str = now.strftime("%d %B %Y")
     bot = Bot(token=BOT_TOKEN)
+
+    tasks = []
     for cid, acc in PENGGUNA.items():
         key = str(cid)
         if status.get(key, {}).get("pulang"):
             continue
-        try:
-            data = ambil_rekapan_absen_awal_bulan(acc["username"], cid)
-            for item in data:
-                if item["Tanggal"] == today_str and item["Out"] not in ["-", "00.00"]:
-                    jam_out = item["Out"].replace(".", ":")
-                    overtime = item.get("Overtime", "-")
-                    await bot.send_message(chat_id=cid, text=f"✅ Absen pulang berhasil pukul {jam_out} – Overtime: {overtime}")
-                    await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} pulang pukul {jam_out}")
-                    status.setdefault(key, {})["pulang"] = True
-                    break
-        except Exception as e:
-            logging.warning(f"Gagal cek absen pulang {acc['username']}: {e}")
-    _save_status(status)
+
+        async def _cek_user_pulang(cid=cid, acc=acc, key=key):
+            try:
+                data = ambil_rekapan_absen_awal_bulan(acc["username"], cid)
+                for item in data:
+                    if item["Tanggal"] == today_str and item["Out"] not in ["-", "00.00"]:
+                        jam_out = item["Out"].replace(".", ":")
+                        overtime = item.get("Overtime", "-")
+                        await bot.send_message(cid, f"✅ Absen pulang pukul {jam_out} – Overtime: {overtime}")
+                        await bot.send_message(ADMIN_ID, f"👤 {acc['alias']} pulang pukul {jam_out}")
+                        status.setdefault(key, {})["pulang"] = True
+                        break
+            except Exception as e:
+                logging.warning(f"Gagal cek absen pulang {acc['username']}: {e}")
+
+        tasks.append(_cek_user_pulang())
+
+    if tasks:
+        start = time.time()
+        await asyncio.gather(*tasks)
+        logging.info(f"[Loop] cek_absen_masuk selesai dalam {time.time() - start:.2f}s")
+        _save_status(status)
 
 async def cek_lupa_pulang():
     logging.info("[Loop] Mengecek lupa absen pulang...")
+    """
+    Notifikasi lupa absen pulang pada akhir hari
+    """
     status = _load_status()
     bot = Bot(token=BOT_TOKEN)
+
+    tasks = []
     for cid, acc in PENGGUNA.items():
         key = str(cid)
         masuk = status.get(key, {}).get("masuk")
         pulang = status.get(key, {}).get("pulang")
 
-        if not pulang:
-            await bot.send_message(chat_id=cid, text="ngana lupa absen pulang bro❗❗❗")
-            await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} lupa absen pulang😂")
-            status.setdefault(key, {})["pulang"] = False
+        async def _cek_user_lupa_pulang(cid=cid, acc=acc, key=key, masuk=masuk, pulang=pulang):
+            try:
+                if not pulang:
+                    await bot.send_message(chat_id=cid, text="ngana lupa absen pulang bro❗❗❗")
+                    await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} lupa absen pulang😂")
+                    status.setdefault(key, {})["pulang"] = False
+                if not masuk and not pulang:
+                    await bot.send_message(chat_id=cid, text="⚠️ ngana mangkir atau SKD ini bro 😂")
+                    await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} lupa ba absen 😂")
+            except Exception as e:
+                logging.warning(f"Gagal notifikasi lupa absen pulang {acc['username']}: {e}")
 
-        if not masuk and not pulang:
-            await bot.send_message(chat_id=cid, text="⚠️ ngana mangkir atau SKD ini bro 😂")
-            await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} lupa ba absen 😂")
-    _save_status(status)
+        tasks.append(_cek_user_lupa_pulang())
+
+    if tasks:
+        start = time.time()
+        await asyncio.gather(*tasks)
+        logging.info(f"[Loop] cek_absen_masuk selesai dalam {time.time() - start:.2f}s")
+        _save_status(status)
 
 async def on_startup(app):
     loop = asyncio.get_running_loop()
@@ -465,26 +529,26 @@ async def on_startup(app):
     logging.info("[Scheduler] Menjadwalkan tugas-tugas cek absen dan notifikasi...")
     
     # Tugas kirim rekap otomatis
-    scheduler.add_job(ping_bot, CronTrigger(hour=21, minute=59, timezone=WITA))
-    scheduler.add_job(kirim_rekap_ke_semua, CronTrigger(hour=22, minute=0, timezone=WITA))
+    #scheduler.add_job(ping_bot, CronTrigger(hour=21, minute=59, timezone=WITA))
+    #scheduler.add_job(kirim_rekap_ke_semua, CronTrigger(hour=22, minute=0, timezone=WITA))
 
     # Tugas cek absensi
-    scheduler.add_job(ping_bot, CronTrigger(hour=6, minute=59, timezone=WITA))
+    #scheduler.add_job(ping_bot, CronTrigger(hour=6, minute=59, timezone=WITA))
     # Loop cek masuk
     scheduler.add_job(
         cek_absen_masuk,
-        CronTrigger(minute='*/5', hour='7-10', timezone=WITA)
+        CronTrigger(minute='*/1', hour='22-23', timezone=WITA)
     )
     # Notifikasi lupa masuk
     scheduler.add_job(
         cek_lupa_masuk,
-        CronTrigger(hour=11, minute=0, timezone=WITA)
+        CronTrigger(hour=10, minute=0, timezone=WITA)
     )
-    # Loop cek pulang setiap 5 menit 16-20
+    # Loop cek pulang
     scheduler.add_job(ping_bot, CronTrigger(hour=15, minute=59, timezone=WITA))
     scheduler.add_job(
         cek_absen_pulang,
-        CronTrigger(minute='*/5', hour='16-19', timezone=WITA)
+        CronTrigger(minute='*/1', hour='17-19', timezone=WITA)
     )
     # Notifikasi lupa pulang
     scheduler.add_job(
@@ -508,14 +572,6 @@ async def telegram_webhook(request):
     await request.app['bot_app'].update_queue.put(update)
     return web.Response(text="OK")
     
-    # ======= [SET UP TELEGRAM WEBHOOK] =======
-    webhook_endpoint = f"/webhook/{BOT_TOKEN}"
-    full_webhook_url = f"{WEBHOOK_URL}{webhook_endpoint}"
-    await app.bot.set_webhook(full_webhook_url)
-    print(f"✅ Webhook active at: {full_webhook_url}")
-
-    
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
@@ -529,6 +585,12 @@ if __name__ == "__main__":
         # Initialize & start the application (dispatcher, job queue, etc)
         await app.initialize()
         await app.start()
+
+        # **Pasang webhook** (sekali saja)
+        webhook_endpoint = f"/webhook/{BOT_TOKEN}"
+        full_webhook_url = f"{WEBHOOK_URL}{webhook_endpoint}"
+        await app.bot.set_webhook(full_webhook_url)
+        logging.info(f"✅ Webhook active at: {full_webhook_url}")
         
         # Run startup tasks (scheduler + webhook)
         await on_startup(app)
@@ -537,7 +599,7 @@ if __name__ == "__main__":
         web_app = web.Application()
         web_app['bot_app'] = app
         # Route webhook requests
-        web_app.router.add_post(f'/webhook/{{token}}', telegram_webhook)
+        web_app.router.add_post(webhook_endpoint, telegram_webhook)
         # Health check endpoint
         web_app.router.add_get('/ping', lambda r: web.Response(text='pong'))
 
