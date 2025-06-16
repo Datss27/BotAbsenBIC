@@ -434,7 +434,7 @@ async def cek_lupa_masuk():
     today_str = now.strftime("%d %B %Y")
 
     tasks = []
-     for cid, acc in PENGGUNA.items():
+    for cid, acc in PENGGUNA.items():
         key = str(cid)
         # hanya yang belum absen masuk
         if status.get(key, {}).get("masuk"):
