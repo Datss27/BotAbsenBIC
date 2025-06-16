@@ -168,7 +168,7 @@ def ambil_rekapan_absen_awal_bulan(username, user_id):
     awal_bulan = today.replace(day=1)
     data_bulan_ini = []
 
-    row in rows:
+    for row in rows:
         cols = [td.get_text(strip=True) for td in row.find_all("td")]
         if len(cols) >= 9:
             try:
