@@ -38,14 +38,14 @@ SESSION_TTL = 3600  # seconds
 
 # ======= [PENGGUNA] =======
 PENGGUNA = {
-    7952198349: {"username": "2015276831", "alias": "Venuel Koraag"},
-    5018276186: {"username": "2015021438", "alias": "Ghito Palit"},
-    #5044153907: {"username": "2015285206", "alias": "Erik Kathiandagho"},
-    #5162021253: {"username": "2015387831", "alias": "Richard Lontoh"},
-    #5406034801: {"username": "2015014805", "alias": "Sarfan Antu"},
-    #5627240666: {"username": "2015447883", "alias": "Sukrianto Matui"},
-    #5512376425: {"username": "2015344315", "alias": "Kevin Makikama"},
-    #1341142195: {"username": "2015565161", "alias": "Elshadai Tampi"}
+    7952198349: {"username": "2015276831", "alias": "Venuel Koraag", "julukan": "Embo"},
+    5018276186: {"username": "2015021438", "alias": "Ghito Palit", "julukan": "Tua Ghito"},
+    5044153907: {"username": "2015285206", "alias": "Erik Kathiandagho", "julukan": "Erika"},
+    5162021253: {"username": "2015387831", "alias": "Richard Lontoh", "julukan": "Papi"},
+    5406034801: {"username": "2015014805", "alias": "Sarfan Antu", "julukan": "Bos Arfan"},
+    5627240666: {"username": "2015447883", "alias": "Sukrianto Matui", "julukan": "Pak Haji"},
+    5512376425: {"username": "2015344315", "alias": "Kevin Makikama", "julukan": "Kribo"},
+    1341142195: {"username": "2015565161", "alias": "Elshadai Tampi", "julukan": "ELL"}
 }
 
 # ======= [CACHE FUNCTIONS] =======
@@ -307,9 +307,10 @@ async def rekap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     akun = PENGGUNA[chat_id]
     username = akun["username"]
     alias = akun["alias"]
+    julukan = akun["julukan"]
 
     await update.message.reply_text(f"🚀 Menyiapkan rekap {alias}...")
-    await context.bot.send_message(chat_id=ADMIN_ID, text=f"👤 {alias} meminta rekap absensi")
+    await context.bot.send_message(chat_id=ADMIN_ID, text=f"👤 {julukan} meminta rekap absensi")
     logging.info(f"[Rekap] {alias} meminta rekap absensi")
     try:
         data = ambil_rekapan_absen_awal_bulan(username, chat_id)
@@ -408,9 +409,13 @@ async def cek_absen_masuk():
                 if any(item["Tanggal"] == today_str for item in data):
                     t = now.strftime("%H:%M")
                     label = " (Terlambat trusss😂)" if now.hour >= 8 else ""
-                    await bot.send_message(cid, f"✅ Absen masuk tercatat pukul {t}{label}")
-                    await bot.send_message(ADMIN_ID, f"👤 {acc['alias']} absen masuk pukul {t}")
-                    status.setdefault(key, {})["masuk"] = True
+                    try:
+                        await bot.send_message(cid, f"✅ Absen masuk tercatat pukul {t}{label}")
+                        await bot.send_message(ADMIN_ID, f"👤 {acc['julukan']} absen masuk pukul {t}")
+                    except TelegramError as e:
+                        logging.warning(f"Gagal kirim ke {cid}: {e}")
+                    finally:
+                        status.setdefault(key, {})["masuk"] = True
             except Exception as e:
                 logging.warning(f"Gagal cek absen masuk {acc['username']}: {e}")
 
@@ -442,11 +447,12 @@ async def cek_lupa_masuk():
         async def _cek_user_lupa(cid=cid, acc=acc, key=key):
             try:
                 await bot.send_message(chat_id=cid, text="ngana lupa absen maso bro❗❗❗")
-                await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} lupa absen maso😂")
-                status.setdefault(key, {})["masuk"] = False
+                await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['julukan']} lupa absen maso😂")
             except Exception as e:
                 logging.warning(f"Gagal notifikasi lupa absen masuk {acc['username']}: {e}")
-
+            finally:
+                status.setdefault(key, {})["masuk"] = False
+                
         tasks.append(_cek_user_lupa())
 
     if tasks:
@@ -474,9 +480,13 @@ async def cek_absen_pulang():
                     if item["Tanggal"] == today_str and item["Out"] not in ["-", "00.00"]:
                         jam_out = item["Out"].replace(".", ":")
                         overtime = item.get("Overtime", "-")
-                        await bot.send_message(cid, f"✅ Absen pulang pukul {jam_out} – Overtime: {overtime}")
-                        await bot.send_message(ADMIN_ID, f"👤 {acc['alias']} pulang pukul {jam_out}")
-                        status.setdefault(key, {})["pulang"] = True
+                        try:
+                            await bot.send_message(cid, f"✅ Absen pulang pukul {jam_out} – Overtime: {overtime}")
+                            await bot.send_message(ADMIN_ID, f"👤 {acc['julukan']} pulang pukul {jam_out}")
+                        except Exception as e:
+                            logging.warning(f"Gagal kirim pesan absen pulang ke {cid}: {e}")
+                        finally:
+                            status.setdefault(key, {})["pulang"] = True
                         break
             except Exception as e:
                 logging.warning(f"Gagal cek absen pulang {acc['username']}: {e}")
@@ -486,14 +496,11 @@ async def cek_absen_pulang():
     if tasks:
         start = time.time()
         await asyncio.gather(*tasks)
-        logging.info(f"[Loop] cek_absen_masuk selesai dalam {time.time() - start:.2f}s")
+        logging.info(f"[Loop] cek_absen_pulang selesai dalam {time.time() - start:.2f}s")
         _save_status(status)
 
 async def cek_lupa_pulang():
     logging.info("[Loop] Mengecek lupa absen pulang...")
-    """
-    Notifikasi lupa absen pulang pada akhir hari
-    """
     status = _load_status()
     bot = Bot(token=BOT_TOKEN)
 
@@ -503,15 +510,26 @@ async def cek_lupa_pulang():
         masuk = status.get(key, {}).get("masuk")
         pulang = status.get(key, {}).get("pulang")
 
+        if pulang:  # Sudah absen pulang, lewati
+            continue
+
         async def _cek_user_lupa_pulang(cid=cid, acc=acc, key=key, masuk=masuk, pulang=pulang):
             try:
                 if not pulang:
-                    await bot.send_message(chat_id=cid, text="ngana lupa absen pulang bro❗❗❗")
-                    await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} lupa absen pulang😂")
-                    status.setdefault(key, {})["pulang"] = False
+                    try:
+                        await bot.send_message(chat_id=cid, text="ngana lupa absen pulang bro❗❗❗")
+                        await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['julukan']} lupa absen pulang😂")
+                    except Exception as e:
+                        logging.warning(f"Gagal kirim pesan lupa pulang ke {cid}: {e}")
+                    finally:
+                        status.setdefault(key, {})["pulang"] = False
+
                 if not masuk and not pulang:
-                    await bot.send_message(chat_id=cid, text="⚠️ ngana mangkir atau SKD ini bro 😂")
-                    await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['alias']} lupa ba absen 😂")
+                    try:
+                        await bot.send_message(chat_id=cid, text="⚠️ ngana mangkir atau SKD ini bro 😂")
+                        await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['julukan']} lupa ba absen 😂")
+                    except Exception as e:
+                        logging.warning(f"Gagal kirim pesan mangkir ke {cid}: {e}")
             except Exception as e:
                 logging.warning(f"Gagal notifikasi lupa absen pulang {acc['username']}: {e}")
 
@@ -520,7 +538,7 @@ async def cek_lupa_pulang():
     if tasks:
         start = time.time()
         await asyncio.gather(*tasks)
-        logging.info(f"[Loop] cek_absen_masuk selesai dalam {time.time() - start:.2f}s")
+        logging.info(f"[Loop] cek_lupa_pulang selesai dalam {time.time() - start:.2f}s")
         _save_status(status)
 
 async def on_startup(app):
@@ -529,8 +547,8 @@ async def on_startup(app):
     logging.info("[Scheduler] Menjadwalkan tugas-tugas cek absen dan notifikasi...")
     
     # Tugas kirim rekap otomatis
-    #scheduler.add_job(ping_bot, CronTrigger(hour=21, minute=59, timezone=WITA))
-    #scheduler.add_job(kirim_rekap_ke_semua, CronTrigger(hour=22, minute=0, timezone=WITA))
+    #scheduler.add_job(ping_bot, CronTrigger(hour=5, minute=59, timezone=WITA))
+    #scheduler.add_job(kirim_rekap_ke_semua, CronTrigger(hour=6, minute=0, timezone=WITA))
 
     # Tugas cek absensi
     #scheduler.add_job(ping_bot, CronTrigger(hour=6, minute=59, timezone=WITA))
@@ -548,7 +566,7 @@ async def on_startup(app):
     scheduler.add_job(ping_bot, CronTrigger(hour=15, minute=59, timezone=WITA))
     scheduler.add_job(
         cek_absen_pulang,
-        CronTrigger(minute='*/1', hour='22-23', timezone=WITA)
+        CronTrigger(minute='*/1', hour='17-19', timezone=WITA)
     )
     # Notifikasi lupa pulang
     scheduler.add_job(
@@ -600,8 +618,6 @@ if __name__ == "__main__":
         web_app['bot_app'] = app
         # Route webhook requests
         web_app.router.add_post(webhook_endpoint, telegram_webhook)
-        # Health check endpoint
-        web_app.router.add_get('/ping', lambda r: web.Response(text='pong'))
 
         runner = web.AppRunner(web_app)
         await runner.setup()
