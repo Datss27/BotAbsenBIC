@@ -39,7 +39,7 @@ SESSION_TTL = 3600  # seconds
 # ======= [PENGGUNA] =======
 PENGGUNA = {
     7952198349: {"username": "2015276831", "alias": "Venuel Koraag"},
-    #5018276186: {"username": "2015021438", "alias": "Ghito Palit"},
+    5018276186: {"username": "2015021438", "alias": "Ghito Palit"},
     #5044153907: {"username": "2015285206", "alias": "Erik Kathiandagho"},
     #5162021253: {"username": "2015387831", "alias": "Richard Lontoh"},
     #5406034801: {"username": "2015014805", "alias": "Sarfan Antu"},
@@ -537,7 +537,7 @@ async def on_startup(app):
     # Loop cek masuk
     scheduler.add_job(
         cek_absen_masuk,
-        CronTrigger(minute='*/1', hour='22-23', timezone=WITA)
+        CronTrigger(minute='*/1', hour='7-9', timezone=WITA)
     )
     # Notifikasi lupa masuk
     scheduler.add_job(
@@ -548,7 +548,7 @@ async def on_startup(app):
     scheduler.add_job(ping_bot, CronTrigger(hour=15, minute=59, timezone=WITA))
     scheduler.add_job(
         cek_absen_pulang,
-        CronTrigger(minute='*/1', hour='17-19', timezone=WITA)
+        CronTrigger(minute='*/1', hour='22-23', timezone=WITA)
     )
     # Notifikasi lupa pulang
     scheduler.add_job(
