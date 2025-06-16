@@ -39,13 +39,13 @@ SESSION_TTL = 3600  # seconds
 # ======= [PENGGUNA] =======
 PENGGUNA = {
     7952198349: {"username": "2015276831", "alias": "Venuel Koraag"},
-    #5018276186: {"username": "2015021438", "alias": "Ghito Palit"},
-    #5044153907: {"username": "2015285206", "alias": "Erik Kathiandagho"},
-    #5162021253: {"username": "2015387831", "alias": "Richard Lontoh"},
-    #5406034801: {"username": "2015014805", "alias": "Sarfan Antu"},
-    #5627240666: {"username": "2015447883", "alias": "Sukrianto Matui"},
-    #5512376425: {"username": "2015344315", "alias": "Kevin Makikama"},
-    #1341142195: {"username": "2015565161", "alias": "Elshadai Tampi"}
+    5018276186: {"username": "2015021438", "alias": "Ghito Palit"},
+    5044153907: {"username": "2015285206", "alias": "Erik Kathiandagho"},
+    5162021253: {"username": "2015387831", "alias": "Richard Lontoh"},
+    5406034801: {"username": "2015014805", "alias": "Sarfan Antu"},
+    5627240666: {"username": "2015447883", "alias": "Sukrianto Matui"},
+    5512376425: {"username": "2015344315", "alias": "Kevin Makikama"},
+    1341142195: {"username": "2015565161", "alias": "Elshadai Tampi"}
 }
 
 # ======= [CACHE FUNCTIONS] =======
