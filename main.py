@@ -460,6 +460,7 @@ async def cek_lupa_pulang():
     _save_status(status)
 
 async def on_startup(app):
+    loop = asyncio.get_running_loop()
     scheduler = AsyncIOScheduler(timezone=WITA)
     logging.info("[Scheduler] Menjadwalkan tugas-tugas cek absen dan notifikasi...")
     
