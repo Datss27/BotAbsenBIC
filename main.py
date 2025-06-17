@@ -617,7 +617,7 @@ if __name__ == "__main__":
         web_app = web.Application()
         web_app['bot_app'] = app
         # Route webhook requests
-        web_app.router.add_post(webhook_endpoint, telegram_webhook)
+        web_app.router.add_post("/webhook/{token}", telegram_webhook)
 
         runner = web.AppRunner(web_app)
         await runner.setup()
