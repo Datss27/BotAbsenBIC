@@ -38,7 +38,23 @@ WITA = timezone("Asia/Makassar")
 SESSION_TTL = 3600  # seconds
 
 # ======= [BOT GLOBAL INSTANCE] =======
-request = HTTPXRequest(pool_timeout=10, read_timeout=10)
+request = HTTPXRequest(
+    # Maksimum waktu menunggu “slot” koneksi tersedia di pool
+    pool_timeout=5,            
+
+    # Jumlah koneksi HTTP yang dipertahankan (keep‑alive)
+    pool_connections=20,       
+    pool_maxsize=20,           
+
+    # Waktu maksimal untuk membangun koneksi ke server Telegram
+    connect_timeout=5,         
+
+    # Waktu maksimal menunggu respons (header + body) dari Telegram
+    read_timeout=30,           
+
+    # (Opsional) Total waktu tunggu keseluruhan request
+    timeout=60                  
+)
 bot = Bot(token=BOT_TOKEN, request=request)
 
 # ======= [PENGGUNA] =======
