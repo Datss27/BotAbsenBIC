@@ -405,7 +405,7 @@ async def cek_absen_masuk():
             continue
 
         async def _cek_user_masuk(cid=cid, acc=acc, key=key):
-            logging.info(f"[_cek_user_masuk] mengecek absen masuk {acc['julukan']} ({cid})")
+            logging.info(f"mengecek absen masuk {acc['julukan']} ({cid})")
             try:
                 data = ambil_rekapan_absen_awal_bulan(acc["username"], cid)
                 if any(item["Tanggal"] == today_str for item in data):
@@ -415,7 +415,7 @@ async def cek_absen_masuk():
                         await bot.send_message(cid, f"✅ Absen masuk tercatat pukul {t}{label}")
                         await bot.send_message(ADMIN_ID, f"👤 {acc['julukan']} absen masuk pukul {t}")
                     except TelegramError as e:
-                        logging.warning(f"Gagal kirim ke {cid}: {e}")
+                        logging.warning(f"Gagal kirim ke {acc['alias']}: {e}")
                     finally:
                         status.setdefault(key, {})["masuk"] = True
                         logging.info(f"[STATUS] {acc['julukan']} ({cid}) ✅ sudah absen datang.")
@@ -453,7 +453,7 @@ async def cek_lupa_masuk():
                 await bot.send_message(chat_id=cid, text="ngana lupa absen maso bro❗❗❗")
                 await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['julukan']} lupa absen maso😂")
             except Exception as e:
-                logging.warning(f"Gagal notifikasi lupa absen masuk {acc['username']}: {e}")
+                logging.warning(f"Gagal notifikasi lupa absen masuk {acc['alias']}: {e}")
             finally:
                 status.setdefault(key, {})["masuk"] = False
                 logging.info(f"[STATUS] {acc['alias']} ({cid}) ❌ belum absen masuk.")
@@ -490,13 +490,13 @@ async def cek_absen_pulang():
                             await bot.send_message(cid, f"✅ Absen pulang pukul {jam_out} – Overtime: {overtime}")
                             await bot.send_message(ADMIN_ID, f"👤 {acc['julukan']} pulang pukul {jam_out}")
                         except Exception as e:
-                            logging.warning(f"Gagal kirim pesan absen pulang ke {cid}: {e}")
+                            logging.warning(f"Gagal kirim pesan absen pulang ke {acc['alias']}: {e}")
                         finally:
                             status.setdefault(key, {})["pulang"] = True
                             logging.info(f"[STATUS] {acc['julukan']} ({cid}) ✅ sudah absen pulang.")
                         break
             except Exception as e:
-                logging.warning(f"Gagal cek absen pulang {acc['username']}: {e}")
+                logging.warning(f"Gagal cek absen pulang {acc['alias']}: {e}")
 
         tasks.append(_cek_user_pulang())
 
