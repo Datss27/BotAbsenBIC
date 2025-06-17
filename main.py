@@ -555,7 +555,7 @@ async def on_startup(app):
     # Loop cek masuk
     scheduler.add_job(
         cek_absen_masuk,
-        CronTrigger(minute='*/1', hour='7-9', timezone=WITA)
+        CronTrigger(minute='*/5', hour='7-9', timezone=WITA)
     )
     # Notifikasi lupa masuk
     scheduler.add_job(
@@ -566,7 +566,7 @@ async def on_startup(app):
     scheduler.add_job(ping_bot, CronTrigger(hour=15, minute=59, timezone=WITA))
     scheduler.add_job(
         cek_absen_pulang,
-        CronTrigger(minute='*/1', hour='17-19', timezone=WITA)
+        CronTrigger(minute='*/5', hour='17-19', timezone=WITA)
     )
     # Notifikasi lupa pulang
     scheduler.add_job(
