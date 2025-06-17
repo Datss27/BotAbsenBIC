@@ -405,6 +405,7 @@ async def cek_absen_masuk():
             continue
 
         async def _cek_user_masuk(cid=cid, acc=acc, key=key):
+            logging.info(f"[_cek_user_masuk] mengecek absen masuk {acc['julukan']} ({cid})")
             try:
                 data = ambil_rekapan_absen_awal_bulan(acc["username"], cid)
                 if any(item["Tanggal"] == today_str for item in data):
@@ -417,6 +418,7 @@ async def cek_absen_masuk():
                         logging.warning(f"Gagal kirim ke {cid}: {e}")
                     finally:
                         status.setdefault(key, {})["masuk"] = True
+                        logging.info(f"[STATUS] {acc['julukan']} ({cid}) ✅ sudah absen datang.")
             except Exception as e:
                 logging.warning(f"Gagal cek absen masuk {acc['username']}: {e}")
 
@@ -446,6 +448,7 @@ async def cek_lupa_masuk():
         if status.get(key, {}).get("masuk"):
             continue
         async def _cek_user_lupa(cid=cid, acc=acc, key=key):
+            logging.info(f"[_cek_user_lupa] mengecek lupa absen masuk {acc['julukan']} ({cid})")
             try:
                 await bot.send_message(chat_id=cid, text="ngana lupa absen maso bro❗❗❗")
                 await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['julukan']} lupa absen maso😂")
@@ -453,6 +456,7 @@ async def cek_lupa_masuk():
                 logging.warning(f"Gagal notifikasi lupa absen masuk {acc['username']}: {e}")
             finally:
                 status.setdefault(key, {})["masuk"] = False
+                logging.info(f"[STATUS] {acc['alias']} ({cid}) ❌ belum absen masuk.")
                 
         tasks.append(_cek_user_lupa())
 
@@ -475,6 +479,7 @@ async def cek_absen_pulang():
             continue
 
         async def _cek_user_pulang(cid=cid, acc=acc, key=key):
+            logging.info(f"[_cek_user_pulang] mengecek absen pulang {acc['julukan']} ({cid})")
             try:
                 data = ambil_rekapan_absen_awal_bulan(acc["username"], cid)
                 for item in data:
@@ -488,6 +493,7 @@ async def cek_absen_pulang():
                             logging.warning(f"Gagal kirim pesan absen pulang ke {cid}: {e}")
                         finally:
                             status.setdefault(key, {})["pulang"] = True
+                            logging.info(f"[STATUS] {acc['julukan']} ({cid}) ✅ sudah absen pulang.")
                         break
             except Exception as e:
                 logging.warning(f"Gagal cek absen pulang {acc['username']}: {e}")
@@ -515,6 +521,7 @@ async def cek_lupa_pulang():
             continue
 
         async def _cek_user_lupa_pulang(cid=cid, acc=acc, key=key, masuk=masuk, pulang=pulang):
+            logging.info(f"[_cek_user_lupa_pulang] mengecek lupa absen pulang {acc['julukan']} ({cid})")
             try:
                 if not pulang:
                     try:
@@ -524,6 +531,7 @@ async def cek_lupa_pulang():
                         logging.warning(f"Gagal kirim pesan lupa pulang ke {cid}: {e}")
                     finally:
                         status.setdefault(key, {})["pulang"] = False
+                        logging.info(f"[STATUS] {acc['alias']} ({cid}) ❌ belum absen pulang.")
 
                 if not masuk and not pulang:
                     try:
@@ -548,11 +556,11 @@ async def on_startup(app):
     logging.info("[Scheduler] Menjadwalkan tugas-tugas cek absen dan notifikasi...")
     
     # Tugas kirim rekap otomatis
-    #scheduler.add_job(ping_bot, CronTrigger(hour=5, minute=59, timezone=WITA))
-    #scheduler.add_job(kirim_rekap_ke_semua, CronTrigger(hour=6, minute=0, timezone=WITA))
+    scheduler.add_job(ping_bot, CronTrigger(hour=5, minute=59, timezone=WITA))
+    scheduler.add_job(kirim_rekap_ke_semua, CronTrigger(hour=6, minute=0, timezone=WITA))
 
     # Tugas cek absensi
-    #scheduler.add_job(ping_bot, CronTrigger(hour=6, minute=59, timezone=WITA))
+    scheduler.add_job(ping_bot, CronTrigger(hour=6, minute=59, timezone=WITA))
     # Loop cek masuk
     scheduler.add_job(
         cek_absen_masuk,
@@ -564,7 +572,7 @@ async def on_startup(app):
         CronTrigger(hour=10, minute=0, timezone=WITA)
     )
     # Loop cek pulang
-    scheduler.add_job(ping_bot, CronTrigger(hour=15, minute=59, timezone=WITA))
+    scheduler.add_job(ping_bot, CronTrigger(hour=16, minute=59, timezone=WITA))
     scheduler.add_job(
         cek_absen_pulang,
         CronTrigger(minute='*/5', hour='17-19', timezone=WITA)
