@@ -225,6 +225,10 @@ def buat_gambar_absensi(data, alias):
 
     icon_check = Image.open("icons/centang.png").resize((20, 20))
     icon_x = Image.open("icons/x.png").resize((20, 20))
+    icon_late = Image.open("icons/terlambat.png").resize((20, 20))
+    icon_holiday = Image.open("icons/libur.png").resize((20, 20))
+    icon_ijin = Image.open("icons/ijin.png").resize((20, 20))
+    icon_lupa = Image.open("icons/lupa.png").resize((20, 20))
     total_overtime = 0.0
 
     for item in data:
@@ -248,7 +252,21 @@ def buat_gambar_absensi(data, alias):
             x += col_widths[i]
 
         # Simbol centang / silang
-        icon = icon_x if status in ["mangkir", "lupa absen waktu pulang"] else icon_check
+        if status == "hadir":
+            icon = icon_check
+        elif status == "mangkir":
+            icon = icon_x
+        elif status == "terlambat":
+            icon = icon_late
+        elif status == "lupa absen waktu pulang":
+            icon = icon_lupa
+        elif status in ["libur", "hari libur nasional"]:
+            icon = icon_holiday
+        elif status in ["ijin datang terlambat", "ijin pulang"]:
+            icon = icon_ijin
+        else:
+            icon = icon_check  # fallback default
+        
         img.paste(icon, (x + 10, y + 9), icon if icon.mode == 'RGBA' else None)
 
         try:
