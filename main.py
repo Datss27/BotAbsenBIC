@@ -42,23 +42,7 @@ ABSEN_URL  = "https://bicmdo.lalskomputer.my.id/idm_v2/Api/get_absen"
 PASSWORD   = os.getenv("PASSWORD_GLOBAL")
 
 # ======= [BOT GLOBAL INSTANCE] =======
-request = HTTPXRequest(
-    # Maksimum waktu menunggu “slot” koneksi tersedia di pool
-    pool_timeout=5,            
-
-    # Jumlah koneksi HTTP yang dipertahankan (keep‑alive)
-    pool_connections=20,       
-    pool_maxsize=20,           
-
-    # Waktu maksimal untuk membangun koneksi ke server Telegram
-    connect_timeout=5,         
-
-    # Waktu maksimal menunggu respons (header + body) dari Telegram
-    read_timeout=30,           
-
-    # (Opsional) Total waktu tunggu keseluruhan request
-    timeout=60                  
-)
+request = HTTPXRequest()
 bot = Bot(token=BOT_TOKEN, request=request)
 
 # ── UTILS: disk cache untuk cookies ──
