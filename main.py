@@ -301,7 +301,7 @@ async def kirim_ucapan(update: Update):
 
     tanggal = datetime.now(WITA).strftime('%A, %d %B %Y')
     pesan = (
-        f"<i>{ucapan}</i>\n\n"
+        f"<b>{ucapan}</b>\n\n"
         f"<b>{tanggal}</b>"
     )
     await update.message.reply_text(pesan, parse_mode=ParseMode.HTML)
@@ -312,7 +312,7 @@ async def kirim_ucapan_ke(bot: Bot, chat_id: int):
 
     tanggal = datetime.now(WITA).strftime('%A, %d %B %Y')
     pesan = (
-        f"<i>{ucapan}</i>\n\n"
+        f"<b>{ucapan}</b>\n\n"
         f"<b>{tanggal}</b>"
     )
     await bot.send_message(chat_id=chat_id, text=pesan, parse_mode=ParseMode.HTML)
