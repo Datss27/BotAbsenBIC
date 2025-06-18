@@ -209,7 +209,9 @@ def buat_gambar_absensi(data, alias):
     draw = ImageDraw.Draw(img)
 
     # Judul
-    draw.text((padding, padding), f"📋 Rekapan Absensi: {alias}", fill="black", font=font_bold)
+    icon_judul = Image.open("icons/user.png").resize((32, 32))
+    img.paste(icon_judul, (padding, padding), icon_judul if icon_judul.mode == 'RGBA' else None)
+    draw.text((padding + 40, padding + 4), f"Rekapan Absensi: {alias}", fill="black", font=font_bold)
 
     y = padding + header_height
     header = ["Tanggal", "Status", "IN", "OUT", "Overtime", ""]
@@ -278,16 +280,22 @@ def buat_gambar_absensi(data, alias):
         y += line_height
 
     # Total overtime
-    overtime_text = f"🕒 Total Estimasi Overtime: {total_overtime:.2f} jam"
-
+    overtime_text = f"Total Estimasi Overtime: {total_overtime:.2f} jam"
+    icon_jam = Image.open("icons/overtime.png").resize((24, 24))
+    
     try:
         tw, _ = font_bold.getsize(overtime_text)
     except AttributeError:
-        # fallback
         bbox = font_bold.getbbox(overtime_text)
         tw = bbox[2] - bbox[0]
     
-    draw.text(((width - tw) // 2, y + 10), overtime_text, fill="black", font=font_bold)
+    ox = (width - tw) // 2
+    
+    # Tempel ikon sebelum teks
+    img.paste(icon_jam, (ox - 30, y + 12), icon_jam if icon_jam.mode == 'RGBA' else None)
+    
+    # Tulis teks di samping ikon
+    draw.text((ox, y + 10), overtime_text, fill="black", font=font_bold)
 
     buffer = BytesIO()
     img.save(buffer, format="PNG")
