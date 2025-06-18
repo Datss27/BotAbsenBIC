@@ -271,7 +271,8 @@ def buat_gambar_absensi(data, alias):
         y += line_height
 
     overtime_text = f"🕒 Total Estimasi Overtime: {total_overtime:.2f} jam"
-    tw, _ = draw.textsize(overtime_text, font=font_bold)
+    tw, _ = font_bold.getsize(overtime_text)
+
     draw.text(((width - tw) // 2, y + 10), overtime_text, fill="black", font=font_bold)
 
     buffer = BytesIO()
