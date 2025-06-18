@@ -208,12 +208,14 @@ def buat_gambar_absensi(data, alias):
     img = Image.new("RGB", (width, total_height), color="white")
     draw = ImageDraw.Draw(img)
 
+    # Judul
     draw.text((padding, padding), f"📋 Rekapan Absensi: {alias}", fill="black", font=font_bold)
 
     y = padding + header_height
     header = ["Tanggal", "Status", "IN", "OUT", "Overtime", ""]
     col_widths = [150, 300, 80, 80, 150, 50]
 
+    # Header bar latar biru muda
     x = padding
     for i, col in enumerate(header):
         draw.rectangle([x, y, x + col_widths[i], y + line_height], fill=(200, 220, 255))
@@ -221,46 +223,33 @@ def buat_gambar_absensi(data, alias):
         x += col_widths[i]
     y += line_height
 
+    icon_check = Image.open("icons/centang.png").resize((20, 20))
+    icon_x = Image.open("icons/x.png").resize((20, 20))
     total_overtime = 0.0
 
     for item in data:
         x = padding
+        values = [item["Tanggal"], item["Status"], item["In"], item["Out"], item["Overtime"]]
         status = item["Status"].lower()
 
         if status in ["hadir", "ijin datang terlambat", "ijin pulang"]:
-            bg_color = (220, 255, 220)
+            bg_color = (220, 255, 220)  # Hijau muda
         elif status in ["mangkir", "terlambat", "lupa absen waktu pulang"]:
-            bg_color = (255, 220, 220)
+            bg_color = (255, 220, 220)  # Merah muda
         elif status in ["libur", "hari libur nasional"]:
-            bg_color = (210, 230, 255)
+            bg_color = (210, 230, 255)  # Biru muda
         else:
-            bg_color = (240, 240, 240)
+            bg_color = (240, 240, 240)  # Netral
 
         draw.rectangle([padding, y, width - padding, y + line_height], fill=bg_color)
 
-        emoji = "🔘"
-        if status == "hadir":
-            emoji = "✅"
-        elif status == "mangkir":
-            emoji = "❌"
-        elif status == "terlambat":
-            emoji = "⏰"
-        elif status == "lupa absen waktu pulang":
-            emoji = "⚠️"
-        elif status in ["libur", "hari libur nasional"]:
-            emoji = "🏖️"
-        elif status in ["ijin datang terlambat", "ijin pulang"]:
-            emoji = "📝"
-        
-        values = [item["Tanggal"], item["Status"], item["In"], item["Out"], item["Overtime"]]
-        
-        # Tampilkan kolom
         for i, val in enumerate(values):
             draw.text((x + 5, y + 8), val, fill="black", font=font)
             x += col_widths[i]
-        
-        # Emoji status di kolom paling kanan
-        draw.text((x + 10, y + 8), emoji, fill="black", font=font)
+
+        # Simbol centang / silang
+        icon = icon_x if status in ["mangkir", "lupa absen waktu pulang"] else icon_check
+        img.paste(icon, (x + 10, y + 9), icon if icon.mode == 'RGBA' else None)
 
         try:
             if item["Overtime"] != "-" and "jam" in item["Overtime"]:
@@ -270,9 +259,9 @@ def buat_gambar_absensi(data, alias):
             pass
         y += line_height
 
+    # Total overtime
     overtime_text = f"🕒 Total Estimasi Overtime: {total_overtime:.2f} jam"
-    tw, _ = font_bold.getsize(overtime_text)
-
+    tw, th = draw.textsize(overtime_text, font=font_bold)
     draw.text(((width - tw) // 2, y + 10), overtime_text, fill="black", font=font_bold)
 
     buffer = BytesIO()
