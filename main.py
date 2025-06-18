@@ -210,7 +210,7 @@ def buat_gambar_absensi(data, alias):
 
     # Judul
     icon_judul = Image.open("icons/user.png").resize((32, 32))
-    img.paste(icon_judul, (padding, padding), icon_judul if icon_judul.mode == 'RGBA' else None)
+    img.paste(icon_judul, (padding, padding), icon_judul)
     draw.text((padding + 40, padding + 4), f"Rekapan Absensi: {alias}", fill="black", font=font_bold)
 
     y = padding + header_height
@@ -292,9 +292,7 @@ def buat_gambar_absensi(data, alias):
     ox = (width - tw) // 2
     
     # Tempel ikon sebelum teks
-    img.paste(icon_jam, (ox - 30, y + 12), icon_jam if icon_jam.mode == 'RGBA' else None)
-    
-    # Tulis teks di samping ikon
+    img.paste(icon_jam, (ox - 30, y + 12), icon_jam)
     draw.text((ox, y + 10), overtime_text, fill="black", font=font_bold)
 
     buffer = BytesIO()
