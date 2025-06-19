@@ -23,6 +23,8 @@ from aiohttp import web
 from pytz import timezone
 from telegram.error import TelegramError, BadRequest
 from telegram.request import HTTPXRequest
+from telegram.ext import CallbackQueryHandler
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
 # ======= [CONFIG] =======
 ADMIN_ID = 7952198349
@@ -41,6 +43,7 @@ SESSION_TTL = 3600  # detik
 LOGIN_URL  = "https://bicmdo.lalskomputer.my.id/idm_v2/req_masuk"
 ABSEN_URL  = "https://bicmdo.lalskomputer.my.id/idm_v2/Api/get_absen"
 PASSWORD   = os.getenv("PASSWORD_GLOBAL")
+sudah_dilaporkan_user_nonaktif = set()
 
 # ======= [BOT GLOBAL INSTANCE] =======
 request = HTTPXRequest()
@@ -116,7 +119,26 @@ def load_ucapan():
         with open("ucapan.json", "r", encoding="utf-8") as f:
             return json.load(f)
     except:
-        return ["👍 Good day jo, so cukup 😂✌️"]        
+        return ["👍 Good day jo, so cukup 😂✌️"] 
+# ========= [SEND MESSAGE AMAN] =========
+sudah_dilaporkan_user_nonaktif = set()
+
+async def kirim_pesan_aman(chat_id: int, text: str, parse_mode=None):
+    try:
+        await bot.send_message(chat_id=chat_id, text=text, parse_mode=parse_mode)
+        return True
+    except BadRequest as e:
+        if "chat not found" in str(e).lower():
+            alias = PENGGUNA.get(chat_id, {}).get("alias", str(chat_id))
+            if chat_id not in sudah_dilaporkan_user_nonaktif:
+                await bot.send_message(ADMIN_ID, f"⚠️ Tidak bisa kirim pesan ke <b>{alias}</b>.\nUser belum /start atau blokir bot.", parse_mode=ParseMode.HTML)
+                sudah_dilaporkan_user_nonaktif.add(chat_id)
+            logging.warning(f"[BOT] User {chat_id} belum /start atau blokir bot.")
+        else:
+            logging.error(f"[BOT] Gagal kirim pesan ke {chat_id}: {e}")
+    except Exception as e:
+        logging.error(f"[BOT] Error tak terduga saat kirim pesan ke {chat_id}: {e}")
+    return False        
 
 # ======= [MAIN FUNCTIONS] =======
 async def get_logged_session(username, user_id):
@@ -156,15 +178,6 @@ async def get_logged_session(username, user_id):
         await session.close()
         raise e
 
-
-
-
-async def close_all_sessions():
-    for session, _ in SESSION_CACHE.values():
-        if not session.closed:
-            await session.close()
-            logging.debug("✅ Menutup sesi aiohttp yang masih terbuka")
-
 async def ambil_rekapan_absen_awal_bulan_async(username, user_id):
     session = await get_logged_session(username, user_id)
     async with session.get(ABSEN_URL) as res:
@@ -195,16 +208,29 @@ async def ambil_rekapan_absen_awal_bulan_async(username, user_id):
         jam_out_raw = cols[8][:5] if cols[8] else "-"
         jam_in = jam_in_raw.replace(":", ".") if jam_in_raw != "-" else "-"
         jam_out = jam_out_raw.replace(":", ".") if jam_out_raw != "-" else "-"
-        status_absen = "Terlambat" if jam_in_raw != "-" and jam_in_raw >= "08:00" else cols[6]
+        status_asli = cols[6].strip()
+        jam_masuk_valid = jam_in_raw != "-" and jam_in_raw >= "08:00"
+
+        if status_asli.lower() == "hadir" and jam_masuk_valid:
+            status_absen = "Terlambat"
+        else:
+            status_absen = status_asli
         overtime = "-"
         try:
             if jam_in != "-" and jam_out != "-":
-                durasi = float(jam_out) - float(jam_in)
-                if durasi > 8:
-                    overtime = f"{durasi - 8:.2f} jam"
-        except:
-            pass
+                jam_masuk = float(jam_in)
+                jam_pulang = float(jam_out)
 
+                # Cek apakah hari absen adalah Sabtu
+                hari_absen = tanggal.strftime("%A")  # e.g., "Saturday"
+                jam_kerja = 6 if hari_absen == "Saturday" else 8
+
+                batas_pulang = jam_masuk + jam_kerja
+                if jam_pulang > batas_pulang:
+                    overtime = f"{jam_pulang - batas_pulang:.2f} jam"
+        except Exception as e:
+            logging.error(f"Gagal hitung overtime: {e}")
+            
         data_bulan_ini.append({
             "Tanggal": tanggal.strftime("%d %B %Y"),
             "Status": status_absen,
@@ -345,27 +371,37 @@ async def kirim_ucapan_ke(bot: Bot, chat_id: int):
     
 #======= [PING] =======
 async def ping_bot():
-    url = WEBHOOK_URL.replace("/webhook", "/ping")
+    url = WEBHOOK_URL.replace("/webhook", "/ping")  # pastikan ada endpoint /ping di web Anda
     try:
-        timeout = aiohttp.ClientTimeout(total=10)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with aiohttp.ClientSession() as session:
             async with session.get(url) as resp:
                 if resp.status == 200:
-                    logging.debug(f"📡 Ping sukses ke {url} (status: 200 OK)")
-                else:
-                    logging.warning(f"⚠️ Ping ke {url} gagal (status: {resp.status})")
-    except asyncio.TimeoutError:
-        logging.error(f"⏱️ Ping timeout ke {url}")
-    except aiohttp.ClientConnectionError as e:
-        logging.error(f"🌐 Koneksi gagal saat ping ke {url}: {e}")
-    except Exception as e:
-        logging.error(f"🚨 Ping error tidak terduga: {e}")
+                    logging.debug(f"✅ Ping OK {url}")
+    except:
+        pass  # Jangan log error agar log tidak penuh
+
+async def ping_handler(request):
+    return web.Response(text="pong")
+    
+async def conditional_ping():
+    now = datetime.now(WITA)
+    jam = now.hour
+
+    # Zona idle siang: 11.00 - 16.59 | malam: 21.01 - 05.59
+    if (11 <= jam < 17) or (21 <= jam or jam < 6):
+        logging.debug("[Ping] Zona idle, mengirim ping...")
+        await ping_bot()
+    else:
+        logging.debug("[Ping] Zona aktif, skip ping.")
 
 # ======= [COMMAND HANDLERS] =======
-async def rekap(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.message.chat_id
+async def rekap_absen(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    chat_id = query.message.chat_id
+
     if chat_id not in PENGGUNA:
-        await update.message.reply_text("❌ Anda belum terdaftar untuk menggunakan bot ini.")
+        await query.edit_message_text("❌ Anda belum terdaftar.")
         return
 
     akun = PENGGUNA[chat_id]
@@ -373,19 +409,20 @@ async def rekap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     alias = akun["alias"]
     julukan = akun["julukan"]
 
-    await update.message.reply_text(f"🚀 Menyiapkan rekap {alias}...")
+    await query.edit_message_text(f"🚀 Menyiapkan rekap absen {alias}...")
     await context.bot.send_message(chat_id=ADMIN_ID, text=f"👤 {julukan} meminta rekap absensi")
+
     try:
         data = await ambil_rekapan_absen_awal_bulan_async(username, chat_id)
         if not data:
-            await update.message.reply_text("Tidak ada data bulan ini.")
+            await context.bot.send_message(chat_id, "Tidak ada data bulan ini.")
             return
+
         img_buffer = buat_gambar_absensi(data, alias)
-        await update.message.reply_photo(photo=img_buffer, filename=f"Rekap_{alias}.png")
-        ucapan_list = load_ucapan()
-        await kirim_ucapan(update)
+        await context.bot.send_photo(chat_id=chat_id, photo=img_buffer, filename=f"Rekap_{alias}.png")
+        await kirim_ucapan_ke(context.bot, chat_id)
     except Exception as e:
-        await update.message.reply_text(f"Terjadi kesalahan: {str(e)}")
+        await context.bot.send_message(chat_id, f"❌ Terjadi kesalahan: {str(e)}")
 
 async def semua(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.chat_id != ADMIN_ID:
@@ -405,6 +442,14 @@ async def semua(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_photo(photo=img_buffer, filename=f"Rekap_{alias}.png", caption=f"📄 {alias}")
         except Exception as e:
             await update.message.reply_text(f"{alias}: Gagal kirim rekap: {str(e)}")
+
+async def rekap(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("📋 Absen", callback_data="rekap_absen")],
+        [InlineKeyboardButton("🕒 SPL", callback_data="rekap_spl")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("mo minta rekapan apa bro?", reply_markup=reply_markup)
 
 # ======= [FUNGSI OTOMATIS] =======
 async def kirim_rekap_ke_semua():
@@ -430,6 +475,7 @@ async def kirim_rekap_ke_semua():
 
             await kirim_ucapan_ke(bot, chat_id)
             report_success.append(f"✅ {alias}")
+            
 
         except BadRequest as e:
             if "chat not found" in str(e).lower():
@@ -472,11 +518,11 @@ async def cek_absen_masuk():
 
                         if jam_out not in ["-", "00.00"]:
                             # Sudah pulang sebelum dicatat masuk → double scan
-                            await bot.send_message(cid, "adoh nn so absen datang deng pulang 1 kali bro😂")
+                            await kirim_pesan_aman(cid, "adoh nn so absen datang deng pulang 1 kali bro😂")
                             status.setdefault(key, {})["masuk"] = True
                             status.setdefault(key, {})["pulang"] = True
                         else:
-                            await bot.send_message(cid, "✅ Absen masuk berhasil, ba scan jo bro")
+                            await kirim_pesan_aman(cid, "✅ Absen masuk berhasil, ba scan jo bro")
                             status.setdefault(key, {})["masuk"] = True
                         return
             except Exception as e:
@@ -521,8 +567,6 @@ async def cek_lupa_masuk():
     except Exception as e:
         logging.warning(f"⚠️ Gagal kirim rekap ke admin: {e}")
         
-        
-    
 async def cek_absen_pulang():
     status = _load_status()
     now = datetime.now(WITA)
@@ -541,7 +585,7 @@ async def cek_absen_pulang():
                     if item["Tanggal"] == today_str and item["Out"] not in ["-", "00.00"]:
                         jam_out = item["Out"].replace(".", ":")
                         try:
-                            await bot.send_message(cid, f"✅ Absen pulang berhasil pukul {jam_out}")
+                            await kirim_pesan_aman(cid, f"✅ Absen pulang berhasil pukul {jam_out}")
                         except Exception as e:
                             logging.warning(f"Gagal kirim pesan absen pulang ke {acc['alias']}: {e}")
                         finally:
@@ -574,7 +618,7 @@ async def cek_lupa_pulang():
 
         belum.append(acc["alias"])
         try:
-            await bot.send_message(chat_id=cid, text="ngana lupa absen pulang bro❗❗❗")
+            await kirim_pesan_aman(chat_id=cid, text="ngana lupa absen pulang bro❗❗❗")
         except Exception as e:
             logging.warning(f"Gagal kirim pesan lupa pulang ke {cid}: {e}")
         finally:
@@ -583,7 +627,7 @@ async def cek_lupa_pulang():
         if not masuk:
             mangkir.append(acc["alias"])
             try:
-                await bot.send_message(chat_id=cid, text="⚠️ ngana mangkir atau SKD ini bro 😂")
+                await kirim_pesan_aman(chat_id=cid, text="⚠️ ngana mangkir atau SKD ini bro 😂")
                 await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['julukan']} lupa ba absen 😂")
             except Exception as e:
                 logging.warning(f"Gagal kirim pesan mangkir ke {cid}: {e}")
@@ -620,7 +664,7 @@ async def pengingat():
                             f"Jangan lupa input ESS Bro ❗❗❗\n"
                             f"<a href='https://portal.hrindomaret.com/'>🔗 Klik di sini untuk buka portal ESS</a>"
                         )
-                        await bot.send_message(chat_id=cid, text=pesan, parse_mode=ParseMode.HTML)
+                        await kirim_pesan_aman(chat_id=cid, text=pesan, parse_mode=ParseMode.HTML)
                         
                     break
         except Exception as e:
@@ -630,18 +674,144 @@ async def pengingat():
         tasks.append(_cek_status_user(cid, acc))
 
     await asyncio.gather(*tasks)
+    
+async def tutup_semua_session_otomatis():
+    closed = 0
+    for uid, (session, _) in SESSION_CACHE.items():
+        if not session.closed:
+            await session.close()
+            closed += 1
+    SESSION_CACHE.clear()
+    
+    logging.warning(f"[Auto Close] Ditutup otomatis {closed} session.")
+    try:
+        await bot.send_message(chat_id=ADMIN_ID, text=f"🧹 Otomatis ditutup {closed} session.")
+    except:
+        pass
+
+async def kirim_overtime_ke_semua():
+    logging.debug("[SPL] Mengirimkan rekap overtime ke semua pengguna...")
+    now = datetime.now(WITA)
+
+    for cid, akun in PENGGUNA.items():
+        username = akun["username"]
+        alias = akun["alias"]
+        try:
+            data = await ambil_rekapan_absen_awal_bulan_async(username, cid)
+            total = 0.0
+            overtime_data = []
+
+            for item in data:
+                overtime = item.get("Overtime", "-")
+                if overtime != "-" and "jam" in overtime:
+                    try:
+                        jam = float(overtime.split()[0].replace(",", "."))
+                        if jam > 0:
+                            total += jam
+                            overtime_data.append(f"📅 {item['Tanggal']} — {jam:.2f} jam")
+                    except:
+                        continue
+
+            if overtime_data:
+                # ===== HEADER =====
+                overtime_title = "selamat hari minggu bro 😊"
+                word_title = "kira-kira bagini ente pe SPL"
+                name_line = f"👨‍💼 {alias}"
+                width = max(len(overtime_title), len(word_title), len(name_line))
+                pad = " " * max((40 - width) // 2, 0)
+
+                header = (
+                    f"<pre>{pad}{overtime_title}\n"
+                    f"{pad}{word_title}\n"
+                    f"{pad}{name_line}</pre>\n\n"
+                )
+                isi = "\n".join(overtime_data)
+                footer = f"\n\n<b>📊 Total Overtime:</b> {total:.2f} jam"
+
+                pesan = header + isi + footer
+            else:
+                pesan = (
+                    f"👋 <b>Selamat hari Minggu, {alias}</b>\n\n"
+                    f"Belum ada data SPL bulan ini. 💤"
+                )
+
+            await bot.send_message(chat_id=cid, text=pesan, parse_mode=ParseMode.HTML)
+
+        except Exception as e:
+            logging.warning(f"[SPL] Gagal kirim ke {alias}: {e}")
+
+async def rekap_spl(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    cid = query.message.chat_id
+
+    if cid not in PENGGUNA:
+        await context.bot.send_message(chat_id=cid, text="❌ Anda belum terdaftar.")
+        return
+
+    akun = PENGGUNA[cid]
+    username = akun["username"]
+    alias = akun["alias"]
+
+    now = datetime.now(WITA)
+    awal_bulan = now.replace(day=1)
+    tanggal_awal = awal_bulan.strftime("%d %B %Y")
+    tanggal_akhir = now.strftime("%d %B %Y")
+
+    await query.edit_message_text("📊 Sedang menghitung SPL Anda...")
+
+    try:
+        data = await ambil_rekapan_absen_awal_bulan_async(username, cid)
+        total_overtime = 0.0
+        rincian = ""
+
+        for item in data:
+            overtime = item.get("Overtime", "-")
+            if overtime != "-" and "jam" in overtime:
+                try:
+                    jam = float(overtime.split()[0].replace(",", "."))
+                    if jam > 0:
+                        total_overtime += jam
+                        rincian += f"• {item['Tanggal']}: {jam:.2f} jam\n"
+                except:
+                    pass
+
+        if total_overtime > 0:
+            pesan = (
+                f"<b>Rekapan SPL {alias}</b>\n"
+                f"📆 Periode: <b>{tanggal_awal}</b> s.d. <b>{tanggal_akhir}</b>\n"
+                f"🕒 Total Overtime: <b>{total_overtime:.2f} jam</b>\n\n"
+                f"{rincian}"
+            )
+        else:
+            pesan = (
+                f"👋 Hai <b>{alias}</b>,\n\n"
+                f"Belum ada overtime dari awal bulan sampai hari ini. 💤"
+            )
+
+        await context.bot.send_message(cid, pesan, parse_mode=ParseMode.HTML)
+
+    except Exception as e:
+        logging.warning(f"[SPL Manual] Gagal ambil SPL untuk {alias}: {e}")
+        await context.bot.send_message(cid, "❌ Gagal mengambil data SPL.")
 
 async def on_startup(app):
     loop = asyncio.get_running_loop()
     scheduler = AsyncIOScheduler(timezone=WITA)
     logging.debug("[Scheduler] Menjadwalkan tugas-tugas cek absen dan notifikasi...")
     
+    # Tugas ping
+    scheduler.add_job(
+        conditional_ping,
+        CronTrigger(minute='*/30', timezone=WITA)
+    )
     # Tugas kirim rekap otomatis
-    scheduler.add_job(ping_bot, CronTrigger(hour=5, minute=59, timezone=WITA))
     scheduler.add_job(kirim_rekap_ke_semua, CronTrigger(hour=6, minute=0, timezone=WITA))
-
+    scheduler.add_job(
+    kirim_overtime_ke_semua,
+    CronTrigger(day_of_week="sun", hour=7, minute=0, timezone=WITA)
+    )
     # Tugas cek absensi
-    scheduler.add_job(ping_bot, CronTrigger(hour=6, minute=59, timezone=WITA))
     # Loop cek masuk
     scheduler.add_job(
         cek_absen_masuk,
@@ -653,7 +823,6 @@ async def on_startup(app):
         CronTrigger(hour=10, minute=0, timezone=WITA)
     )
     # Loop cek pulang
-    scheduler.add_job(ping_bot, CronTrigger(hour=16, minute=59, timezone=WITA))
     scheduler.add_job(
         cek_absen_pulang,
         CronTrigger(minute='*/1', hour='17-19', timezone=WITA)
@@ -667,6 +836,11 @@ async def on_startup(app):
     scheduler.add_job(
     pengingat,
     CronTrigger(hour=21, minute=0, timezone=WITA) 
+    )
+    # Membersihkan session
+    scheduler.add_job(
+        tutup_semua_session_otomatis,
+        CronTrigger(hour=21, minute=2, timezone=WITA)
     )
 
     scheduler.start()
@@ -698,6 +872,8 @@ if __name__ == "__main__":
     async def startup_and_run():
         app = ApplicationBuilder().token(BOT_TOKEN).build()
         app.add_handler(CommandHandler("rekap", rekap))
+        app.add_handler(CallbackQueryHandler(rekap_absen, pattern="^rekap_absen$"))
+        app.add_handler(CallbackQueryHandler(rekap_spl, pattern="^rekap_spl$"))
         app.add_handler(CommandHandler("semua", semua))
 
         await app.initialize()
@@ -713,6 +889,7 @@ if __name__ == "__main__":
         web_app = web.Application()
         web_app['bot_app'] = app
         web_app.router.add_post("/webhook/{token}", telegram_webhook)
+        web_app.router.add_get("/ping", ping_handler)
 
         runner = web.AppRunner(web_app)
         await runner.setup()
