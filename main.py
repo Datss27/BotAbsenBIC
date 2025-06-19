@@ -780,8 +780,8 @@ async def rekap_spl(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pesan = (
                 f"<b>Rekapan SPL {alias}</b>\n"
                 f"📆 Periode: <b>{tanggal_awal}</b> s.d. <b>{tanggal_akhir}</b>\n"
-                f"🕒 Total Overtime: <b>{total_overtime:.2f} jam</b>\n\n"
                 f"{rincian}"
+                f"🕒 Total Overtime: <b>{total_overtime:.2f} jam</b>\n\n"
             )
         else:
             pesan = (
