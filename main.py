@@ -121,29 +121,49 @@ def load_ucapan():
 # ======= [MAIN FUNCTIONS] =======
 async def get_logged_session(username, user_id):
     now = time.time()
+
     if user_id in SESSION_CACHE:
         session, ts = SESSION_CACHE[user_id]
         if now - ts < SESSION_TTL and not session.closed:
             return session
+        else:
+            if not session.closed:
+                await session.close()
+                logging.debug(f"[Session] Menutup sesi lama untuk user {user_id}")
 
     session = aiohttp.ClientSession()
-    async with session.post(LOGIN_URL, data={
-        "username": username,
-        "password": PASSWORD,
-        "ipaddr": ""
-    }) as res:
-        if "web report ic" not in (await res.text()).lower():
+    try:
+        async with session.post(LOGIN_URL, data={
+            "username": username,
+            "password": PASSWORD,
+            "ipaddr": ""
+        }) as res:
+            html = await res.text()
+            if "web report ic" not in html.lower():
+                await session.close()
+                raise Exception("Login gagal")
+
+        SESSION_CACHE[user_id] = (session, now)
+
+        cj = {c.key: c.value for c in session.cookie_jar}
+        all_disk = load_all_cookies()
+        all_disk[user_id] = {"cookies": cj, "ts": now}
+        save_all_cookies(all_disk)
+
+        return session
+
+    except Exception as e:
+        await session.close()
+        raise e
+
+
+
+
+async def close_all_sessions():
+    for session, _ in SESSION_CACHE.values():
+        if not session.closed:
             await session.close()
-            raise Exception("Login gagal")
-
-    SESSION_CACHE[user_id] = (session, now)
-
-    cj = {c.key: c.value for c in session.cookie_jar}
-    all_disk = load_all_cookies()
-    all_disk[user_id] = {"cookies": cj, "ts": now}
-    save_all_cookies(all_disk)
-
-    return session
+            logging.debug("✅ Menutup sesi aiohttp yang masih terbuka")
 
 async def ambil_rekapan_absen_awal_bulan_async(username, user_id):
     session = await get_logged_session(username, user_id)
@@ -671,34 +691,27 @@ if __name__ == "__main__":
         format="%(asctime)s - %(levelname)s - %(message)s",
         handlers=[
             logging.FileHandler("log_absen.log"),
-            logging.StreamHandler(sys.stdout)  # 🚀 Kirim ke stdout, bukan stderr
+            logging.StreamHandler(sys.stdout)
         ]
     )
 
     async def startup_and_run():
-        # Build the bot application
         app = ApplicationBuilder().token(BOT_TOKEN).build()
-        # Register command handlers
         app.add_handler(CommandHandler("rekap", rekap))
         app.add_handler(CommandHandler("semua", semua))
 
-        # Initialize & start the application (dispatcher, job queue, etc)
         await app.initialize()
         await app.start()
 
-        # **Pasang webhook** (sekali saja)
         webhook_endpoint = f"/webhook/{BOT_TOKEN}"
         full_webhook_url = f"{WEBHOOK_URL}{webhook_endpoint}"
         await app.bot.set_webhook(full_webhook_url)
         logging.debug(f"✅ Webhook active at: {full_webhook_url}")
         
-        # Run startup tasks (scheduler + webhook)
         await on_startup(app)
 
-        # Create aiohttp web server for webhook
         web_app = web.Application()
         web_app['bot_app'] = app
-        # Route webhook requests
         web_app.router.add_post("/webhook/{token}", telegram_webhook)
 
         runner = web.AppRunner(web_app)
@@ -706,8 +719,14 @@ if __name__ == "__main__":
         site = web.TCPSite(runner, '0.0.0.0', PORT)
         await site.start()
 
-        # Keep the service alive
-        while True:
-            await asyncio.sleep(3600)
+        print(f"🌐 Server running on port {PORT}")
+
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        finally:
+            await close_all_sessions()
+            await app.shutdown()
+            await app.stop()
 
     asyncio.run(startup_and_run())
