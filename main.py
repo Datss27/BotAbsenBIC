@@ -25,7 +25,7 @@ from telegram.error import TelegramError, BadRequest
 from telegram.request import HTTPXRequest
 from telegram.ext import CallbackQueryHandler
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-#from modul_libur import fetch_libur_nasional, is_libur_nasional
+from modul_libur import fetch_libur_nasional, is_libur_nasional
 
 # ======= [CONFIG] =======
 ADMIN_ID = 7952198349
@@ -557,9 +557,9 @@ async def kirim_rekap_ke_semua():
 
 async def cek_absen_masuk():
     now = datetime.now(WITA)
-    #if now.weekday() == 6 or is_libur_nasional(now):
-        #logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
-        #return
+    if now.weekday() == 6 or is_libur_nasional(now):
+        logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
+        return
     
     status = _load_status()
     today_str = now.strftime("%d %B %Y")
@@ -594,10 +594,10 @@ async def cek_absen_masuk():
         _save_status(status)
 
 async def cek_lupa_masuk():
-    #now = datetime.now(WITA)
-    #if now.weekday() == 6 or is_libur_nasional(now):
-        #logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
-        #return
+    now = datetime.now(WITA)
+    if now.weekday() == 6 or is_libur_nasional(now):
+        logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
+        return
     status = _load_status()
     
     sudah, belum = [], []
@@ -631,9 +631,9 @@ async def cek_lupa_masuk():
         
 async def cek_absen_pulang():
     now = datetime.now(WITA)
-    #if now.weekday() == 6 or is_libur_nasional(now):
-        #logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
-        #return
+    if now.weekday() == 6 or is_libur_nasional(now):
+        logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
+        return
     
     status = _load_status()
     today_str = now.strftime("%d %B %Y")
@@ -668,10 +668,10 @@ async def cek_absen_pulang():
         _save_status(status)
 
 async def cek_lupa_pulang():
-    #now = datetime.now(WITA)
-    #if now.weekday() == 6 or is_libur_nasional(now):
-        #logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
-        #return
+    now = datetime.now(WITA)
+    if now.weekday() == 6 or is_libur_nasional(now):
+        logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
+        return
     status = _load_status()
 
     sudah, belum, mangkir = [], [], []
@@ -723,9 +723,9 @@ async def cek_lupa_pulang():
 
 async def pengingat():
     now = datetime.now(WITA)
-    #if now.weekday() == 6 or is_libur_nasional(now):
-        #logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
-        #return
+    if now.weekday() == 6 or is_libur_nasional(now):
+        logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
+        return
     
     status = _load_status()
     today_str = now.strftime("%d %B %Y")
@@ -834,7 +834,7 @@ async def kirim_overtime_ke_semua():
             logging.warning(f"[SPL] Gagal kirim ringkasan ke admin: {e}")
             
 async def on_startup(app):
-    #await fetch_libur_nasional()
+    await fetch_libur_nasional()
     loop = asyncio.get_running_loop()
     scheduler = AsyncIOScheduler(timezone=WITA)
     logging.debug("[Scheduler] Menjadwalkan tugas-tugas cek absen dan notifikasi...")
@@ -882,10 +882,10 @@ async def on_startup(app):
         CronTrigger(hour=22, minute=0, timezone=WITA)
     )
     
-    #scheduler.add_job(
-        #fetch_libur_nasional,
-        #CronTrigger(day_of_week="sun", hour=6, minute=30, timezone=WITA)
-    #)
+    scheduler.add_job(
+        fetch_libur_nasional,
+        CronTrigger(day_of_week="sun", hour=6, minute=30, timezone=WITA)
+    )
 
     scheduler.start()
     logging.debug("[Scheduler] Semua tugas dijalankan.")
