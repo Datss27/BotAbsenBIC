@@ -560,7 +560,7 @@ async def cek_absen_masuk():
     if now.weekday() == 6 or is_libur_nasional(now):
         logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
         return
-    
+
     status = _load_status()
     today_str = now.strftime("%d %B %Y")
     tasks = []
@@ -574,13 +574,18 @@ async def cek_absen_masuk():
             try:
                 data = await ambil_rekapan_absen_awal_bulan_async(acc["username"], cid)
                 for item in data:
-                    if item["Tanggal"] == today_str:
-                        jam_in = item.get("In")
-                        if jam_in and jam_in not in ["-", "00.00"]:
-                            jam_in_fmt = jam_in.replace(".", ":")
-                            await kirim_pesan_aman(cid, f"✅ Absen masuk pukul {jam_in_fmt}, ba scan jo bro")
-                            await kirim_pesan_aman(ADMIN_ID, f"👤 {acc['julukan']} ✅ Absen masuk pukul {jam_in_fmt}")
-                            status.setdefault(key, {})["masuk"] = True
+                    if item["Tanggal"] != today_str:
+                        continue
+                    
+                    status_absen = item.get("Status", "").lower()
+                    jam_in = item.get("In", "-")
+                    jam_in_valid = jam_in not in ["-", "00.00"]
+
+                    if "lupa absen datang" in status_absen or "lupa absen pulang" in status_absen:
+                        jam_in_fmt = jam_in.replace(".", ":") if jam_in_valid else "Tidak diketahui"
+                        await kirim_pesan_aman(cid, f"✅ Absen Berhasil (In: {jam_in_fmt}) Ba Scan jo Bro...")
+                        await kirim_pesan_aman(ADMIN_ID, f"👤 {acc['julukan']} ✅ So Ba Absen (In: {jam_in_fmt})")
+                        status.setdefault(key, {})["masuk"] = True
                         break
             except Exception as e:
                 logging.warning(f"Gagal cek absen masuk {acc['username']}: {e}")
@@ -592,7 +597,7 @@ async def cek_absen_masuk():
         await asyncio.gather(*tasks)
         logging.debug(f"[Loop] cek_absen_masuk selesai dalam {time.time() - start:.2f}s")
         _save_status(status)
-
+        
 async def cek_lupa_masuk():
     now = datetime.now(WITA)
     if now.weekday() == 6 or is_libur_nasional(now):
@@ -651,6 +656,7 @@ async def cek_absen_pulang():
                         jam_out = item["Out"].replace(".", ":")
                         try:
                             await kirim_pesan_aman(cid, f"✅ Absen pulang berhasil pukul {jam_out}")
+                            await kirim_pesan_aman(ADMIN_ID, f"👤 {acc['julukan']} ✅ So Absen Pulang {jam_out}")
                         except Exception as e:
                             logging.warning(f"Gagal kirim pesan absen pulang ke {acc['alias']}: {e}")
                         finally:
@@ -670,36 +676,33 @@ async def cek_absen_pulang():
 async def cek_lupa_pulang():
     now = datetime.now(WITA)
     if now.weekday() == 6 or is_libur_nasional(now):
-        logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
+        logging.info("[Absen Pulang] Dilewati karena hari libur atau Minggu.")
         return
-    status = _load_status()
 
+    status = _load_status()
     sudah, belum, mangkir = [], [], []
 
     async def _cek_user(cid, acc):
         key = str(cid)
-        masuk = status.get(key, {}).get("masuk")
-        pulang = status.get(key, {}).get("pulang")
+        masuk = status.get(key, {}).get("masuk", False)
+        pulang = status.get(key, {}).get("pulang", False)
 
-        # Sudah absen pulang
         if pulang:
             sudah.append(acc["alias"])
             return
 
-        # Jika tidak masuk, dianggap mangkir
-        if not masuk:
+        if not masuk and not pulang:
             mangkir.append(acc["alias"])
             try:
-                await kirim_pesan_aman(chat_id=cid, text="⚠️ ngana mangkir atau SKD ini bro 😂")
-                await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['julukan']} lupa ba absen 😂")
+                await kirim_pesan_aman(chat_id=cid, text="⚠️ Ngana mangkir atau SKD ini bro 😂")
+                await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['julukan']} mangkir, nda absen masuk & pulang")
             except Exception as e:
                 logging.warning(f"Gagal kirim pesan mangkir ke {cid}: {e}")
-            return
+            return  # penting supaya tidak lanjut ke "belum"
 
-        # Belum absen pulang
         belum.append(acc["alias"])
         try:
-            await kirim_pesan_aman(chat_id=cid, text="ngana lupa absen pulang bro❗❗❗")
+            await kirim_pesan_aman(chat_id=cid, text="❗Ngana lupa absen pulang bro❗")
         except Exception as e:
             logging.warning(f"Gagal kirim pesan lupa pulang ke {cid}: {e}")
 
