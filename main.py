@@ -405,7 +405,7 @@ def format_broadcast_message(pesan: str) -> str:
         f"<b>📢 Info-Info</b>\n"
         f"🗓️ {tanggal}\n\n"
         f"{pesan}\n\n"
-        f"<b>📢 Brando</b>\"
+        f"<b>📢 Brando</b>"
     )
 
 #======= [UCAPAN] =======
