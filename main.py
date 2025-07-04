@@ -1008,7 +1008,7 @@ if __name__ == "__main__":
         app.add_handler(CommandHandler("semua", semua))
         app.add_handler(CommandHandler("broadcast", broadcast_handler))
         app.add_handler(CallbackQueryHandler(reply_broadcast_handler, pattern="^reply_broadcast$"))
-        app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.STICKER, handle_reply))
+        app.add_handler(MessageHandler(filters.TEXT, handle_reply))
         app.add_handler(CommandHandler("tanya_admin", tanya_admin))
 
         await app.initialize()
