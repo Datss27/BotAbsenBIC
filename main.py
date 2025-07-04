@@ -393,6 +393,17 @@ def buat_gambar_absensi(data, alias):
     img.save(buffer, format="PNG")
     buffer.seek(0)
     return buffer
+    
+state_broadcast = set()
+
+def format_broadcast_message(pesan: str) -> str:
+    tanggal = datetime.now(WITA).strftime('%A, %d %B %Y')
+    return (
+        f"<b>📢 Pesan Penting</b>\n"
+        f"🗓️ {tanggal}\n\n"
+        f"{pesan}\n\n"
+        f"Salam hangat,\n🤖 Bot Absensi"
+    )
 
 #======= [UCAPAN] =======
 async def kirim_ucapan(update: Update):
@@ -498,6 +509,105 @@ async def rekap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("mo minta rekapan apa bro?", reply_markup=reply_markup)
+    
+async def broadcast_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    if chat_id != ADMIN_ID:
+        await update.message.reply_text("❌ Hanya admin yang bisa pakai perintah ini.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Gunakan format: /broadcast <isi pesan>")
+        return
+
+    pesan_raw = " ".join(context.args)
+    pesan = format_broadcast_message(pesan_raw)
+
+    keyboard = InlineKeyboardMarkup.from_button(
+        InlineKeyboardButton("📝 Balas Pesan Ini", callback_data="reply_broadcast")
+    )
+
+    semua_user = list(PENGGUNA.keys())
+    sukses, gagal = [], []
+
+    await update.message.reply_text(f"📡 Mengirim broadcast ke {len(semua_user)} pengguna...")
+
+    for uid in semua_user:
+        try:
+            await bot.send_message(
+                chat_id=uid,
+                text=pesan,
+                reply_markup=keyboard,
+                parse_mode=ParseMode.HTML
+            )
+            sukses.append(uid)
+        except Exception as e:
+            logging.warning(f"[Broadcast] Gagal kirim ke {uid}: {e}")
+            gagal.append(uid)
+
+    ringkasan = (
+        f"<b>📢 Broadcast Selesai</b>\n\n"
+        f"✅ Terkirim: {len(sukses)}\n"
+        f"❌ Gagal: {len(gagal)}"
+    )
+    await bot.send_message(chat_id=ADMIN_ID, text=ringkasan, parse_mode=ParseMode.HTML)
+    
+async def reply_broadcast_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    alias = PENGGUNA.get(user_id, {}).get("alias", str(user_id))
+
+    await query.answer()
+    await query.message.reply_text("📝 Silakan kirim balasan Anda sekarang.")
+    
+    state_broadcast.add(user_id)
+    await bot.send_message(ADMIN_ID, f"📨 {alias} menekan tombol Balas Broadcast.")
+    
+async def handle_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.chat_id
+    if user_id not in state_broadcast:
+        return
+
+    alias = PENGGUNA.get(user_id, {}).get("alias", str(user_id))
+
+    try:
+        if update.message.text:
+            await bot.send_message(
+                ADMIN_ID,
+                f"📨 <b>{alias}</b> membalas broadcast:\n\n{update.message.text}",
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await bot.forward_message(ADMIN_ID, user_id, update.message.message_id)
+
+        await update.message.reply_text("✅ Terima kasih atas balasannya!")
+    except Exception as e:
+        logging.error(f"[REPLY] Gagal forward dari {user_id}: {e}")
+
+    state_broadcast.discard(user_id)
+
+async def tanya_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.chat_id
+    if user_id not in PENGGUNA:
+        await update.message.reply_text("❌ Anda belum terdaftar.")
+        return
+
+    if not context.args:
+        await update.message.reply_text("Gunakan format: /tanya_admin <pertanyaan Anda>")
+        return
+
+    alias = PENGGUNA[user_id]["alias"]
+    pertanyaan = " ".join(context.args)
+
+    await update.message.reply_text("✅ Pertanyaan Anda sudah dikirim ke admin.")
+
+    pesan_admin = (
+        f"🆘 <b>Pesan dari {alias}</b>\n"
+        f"<b>Chat ID:</b> <code>{user_id}</code>\n\n"
+        f"{pertanyaan}"
+    )
+    await bot.send_message(chat_id=ADMIN_ID, text=pesan_admin, parse_mode=ParseMode.HTML)
+
 
 # ======= [FUNGSI OTOMATIS] =======
 async def kirim_rekap_ke_semua():
@@ -893,6 +1003,10 @@ if __name__ == "__main__":
         app.add_handler(CallbackQueryHandler(rekap_absen, pattern="^rekap_absen$"))
         app.add_handler(CallbackQueryHandler(rekap_spl, pattern="^rekap_spl$"))
         app.add_handler(CommandHandler("semua", semua))
+        app.add_handler(CommandHandler("broadcast", broadcast_handler))
+        app.add_handler(CallbackQueryHandler(reply_broadcast_handler, pattern="^reply_broadcast$"))
+        app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.STICKER, handle_reply))
+        app.add_handler(CommandHandler("tanya_admin", tanya_admin))
 
         await app.initialize()
         await app.start()
