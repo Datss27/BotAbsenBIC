@@ -15,7 +15,10 @@ from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 from io import BytesIO
 from telegram import Update, Bot
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import (
+    ApplicationBuilder, CommandHandler, ContextTypes,
+    MessageHandler, CallbackQueryHandler, filters
+)
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram.constants import ParseMode
