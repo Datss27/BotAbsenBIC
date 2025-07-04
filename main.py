@@ -26,6 +26,10 @@ from telegram.request import HTTPXRequest
 from telegram.ext import CallbackQueryHandler
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 from modul_libur import fetch_libur_nasional, is_libur_nasional
+from status_utils import (
+    _load_status, _save_status, reset_status_harian,
+    load_started_users, save_started_users, sudah_memulai
+)
 
 # ======= [CONFIG] =======
 ADMIN_ID = 7952198349
@@ -93,20 +97,6 @@ def load_all_cookies():
 def save_all_cookies(data):
     with open(CACHE_FILE, "wb") as f:
         pickle.dump(data, f)
-
-def _status_path(): 
-    return os.path.join("cache", "status.json")
-
-def _load_status():
-    try:
-        with open(_status_path(), "r") as f:
-            return json.load(f)
-    except:
-        return {}
-
-def _save_status(data):
-    with open(_status_path(), "w") as f:
-        json.dump(data, f)
 
 def get_font(size=16):
     try:
@@ -511,6 +501,8 @@ async def rekap(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ======= [FUNGSI OTOMATIS] =======
 async def kirim_rekap_ke_semua():
+    if not sudah_memulai(chat_id):
+        return
     logging.debug(f"[kirim_rekap_ke_semua] mengirim rekap absensi ke semua")
     waktu_skrg = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
@@ -555,206 +547,165 @@ async def kirim_rekap_ke_semua():
     except Exception as e:
         logging.warning(f"⚠️ Gagal kirim rekap ke admin: {e}")
 
+# 1. CEK ABSEN MASUK
 async def cek_absen_masuk():
-    now = datetime.now(WITA)
-    if now.weekday() == 6 or is_libur_nasional(now):
-        logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
+    if not sudah_memulai(chat_id):
         return
-
-    status = _load_status()
-    today_str = now.strftime("%d %B %Y")
+    now = datetime.now(WITA)
+    if now.weekday() == 6 or is_libur_nasional(now): 
+        return
+    status = reset_status_harian()
+    today = now.strftime("%d %B %Y")
     tasks = []
 
     for cid, acc in PENGGUNA.items():
         key = str(cid)
-        if status.get(key, {}).get("masuk"):
+        if status.get(key, {}).get("masuk"): 
             continue
 
-        async def _cek_user_masuk(cid, acc, key):
+        async def _task(cid=cid, acc=acc, key=key):
             try:
                 data = await ambil_rekapan_absen_awal_bulan_async(acc["username"], cid)
                 for item in data:
-                    if item["Tanggal"] != today_str:
-                        continue
-                    
-                    status_absen = item.get("Status", "").lower()
-                    jam_in = item.get("In", "-")
-                    jam_in_valid = jam_in not in ["-", "00.00"]
-
-                    if "lupa absen datang" in status_absen or "lupa absen pulang" in status_absen:
-                        jam_in_fmt = jam_in.replace(".", ":") if jam_in_valid else "Tidak diketahui"
-                        await kirim_pesan_aman(cid, f"✅ Absen Berhasil (In: {jam_in_fmt}) Ba Scan jo Bro...")
-                        await kirim_pesan_aman(ADMIN_ID, f"👤 {acc['julukan']} ✅ So Ba Absen (In: {jam_in_fmt})")
+                    if item["Tanggal"] == today and item["In"] not in ["-", "00.00"]:
+                        jam_in = item["In"].replace(".", ":")
+                        await kirim_pesan_aman(cid, f"✅ Masuk terdeteksi (In: {jam_in})")
+                        await kirim_pesan_aman(ADMIN_ID, f"👤 {acc['julukan']} ✅ Masuk: {jam_in}")
                         status.setdefault(key, {})["masuk"] = True
                         break
             except Exception as e:
-                logging.warning(f"Gagal cek absen masuk {acc['username']}: {e}")
+                logging.warning(f"[Masuk] {acc['alias']}: {e}")
 
-        tasks.append(_cek_user_masuk(cid, acc, key))
+        tasks.append(_task())
 
     if tasks:
-        start = time.time()
         await asyncio.gather(*tasks)
-        logging.debug(f"[Loop] cek_absen_masuk selesai dalam {time.time() - start:.2f}s")
         _save_status(status)
-        
+
+# 2. CEK LUPA MASUK
 async def cek_lupa_masuk():
-    now = datetime.now(WITA)
-    if now.weekday() == 6 or is_libur_nasional(now):
-        logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
+    if not sudah_memulai(chat_id):
+        return
+    if datetime.now(WITA).weekday() == 6 or is_libur_nasional(datetime.now(WITA)): 
         return
     status = _load_status()
-    
     sudah, belum = [], []
 
-    async def _cek_user(cid, acc):
+    async def _task(cid, acc):
         key = str(cid)
-        if status.get(key, {}).get("masuk"):
-            sudah.append(acc["alias"])
-            return
+        if status.get(key, {}).get("masuk"): sudah.append(acc["alias"])
+        else:
+            belum.append(acc["alias"])
+            await kirim_pesan_aman(cid, "ngana lupa absen maso bro❗❗❗")
 
-        belum.append(acc["alias"])
-        try:
-            await bot.send_message(chat_id=cid, text="ngana lupa absen maso bro❗❗❗")
-        except Exception as e:
-            logging.warning(f"Gagal notifikasi lupa masuk ke {acc['alias']}: {e}")
-        
-    await asyncio.gather(*[_cek_user(cid, acc) for cid, acc in PENGGUNA.items()])
-    
+    await asyncio.gather(*[_task(cid, acc) for cid, acc in PENGGUNA.items()])
     await tutup_semua_session_otomatis()
-    
     _save_status(status)
 
-    pesan = "📋 <b>Ringkasan Lupa Absen Masuk:</b>\n\n"
-    pesan += "✅ <b>Sudah absen:</b>\n" + ("\n".join(sudah) if sudah else "Tidak ada") + "\n\n"
-    pesan += "❌ <b>Belum absen:</b>\n" + ("\n".join(belum) if belum else "Tidak ada")
+    summary = (
+        "📋 <b>Ringkasan Lupa Absen Masuk:</b>\n\n"
+        f"✅ <b>Sudah:</b>\n{chr(10).join(sudah) or 'Tidak ada'}\n\n"
+        f"❌ <b>Belum:</b>\n{chr(10).join(belum) or 'Tidak ada'}"
+    )
+    await bot.send_message(chat_id=ADMIN_ID, text=summary, parse_mode=ParseMode.HTML)
 
-    try:
-        await bot.send_message(chat_id=ADMIN_ID, text=pesan, parse_mode=ParseMode.HTML)
-    except Exception as e:
-        logging.warning(f"⚠️ Gagal kirim rekap ke admin: {e}")
-        
+# 3. CEK ABSEN PULANG
 async def cek_absen_pulang():
-    now = datetime.now(WITA)
-    if now.weekday() == 6 or is_libur_nasional(now):
-        logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
+    if not sudah_memulai(chat_id):
         return
-    
+    if datetime.now(WITA).weekday() == 6 or is_libur_nasional(datetime.now(WITA)): 
+        return
     status = _load_status()
-    today_str = now.strftime("%d %B %Y")
+    today = datetime.now(WITA).strftime("%d %B %Y")
     tasks = []
+
     for cid, acc in PENGGUNA.items():
         key = str(cid)
-        if status.get(key, {}).get("pulang"):
+        if status.get(key, {}).get("pulang"): 
             continue
 
-        async def _cek_user_pulang(cid=cid, acc=acc, key=key):
+        async def _task(cid=cid, acc=acc, key=key):
             try:
                 data = await ambil_rekapan_absen_awal_bulan_async(acc["username"], cid)
                 for item in data:
-                    if item["Tanggal"] == today_str and item["Out"] not in ["-", "00.00"]:
+                    if item["Tanggal"] == today and item["Out"] not in ["-", "00.00"]:
                         jam_out = item["Out"].replace(".", ":")
-                        try:
-                            await kirim_pesan_aman(cid, f"✅ Absen pulang berhasil pukul {jam_out}")
-                            await kirim_pesan_aman(ADMIN_ID, f"👤 {acc['julukan']} ✅ So Absen Pulang {jam_out}")
-                        except Exception as e:
-                            logging.warning(f"Gagal kirim pesan absen pulang ke {acc['alias']}: {e}")
-                        finally:
-                            status.setdefault(key, {})["pulang"] = True
+                        await kirim_pesan_aman(cid, f"✅ Pulang terdeteksi (Out: {jam_out})")
+                        await kirim_pesan_aman(ADMIN_ID, f"👤 {acc['julukan']} ✅ Pulang: {jam_out}")
+                        status.setdefault(key, {})["pulang"] = True
                         break
             except Exception as e:
-                logging.warning(f"Gagal cek absen pulang {acc['alias']}: {e}")
+                logging.warning(f"[Pulang] {acc['alias']}: {e}")
 
-        tasks.append(_cek_user_pulang(cid, acc, key))
+        tasks.append(_task())
 
     if tasks:
-        start = time.time()
         await asyncio.gather(*tasks)
-        logging.debug(f"[Loop] cek_absen_pulang selesai dalam {time.time() - start:.2f}s")
         _save_status(status)
 
+# 4. CEK LUPA PULANG
 async def cek_lupa_pulang():
-    now = datetime.now(WITA)
-    if now.weekday() == 6 or is_libur_nasional(now):
-        logging.info("[Absen Pulang] Dilewati karena hari libur atau Minggu.")
+    if not sudah_memulai(chat_id):
         return
-
+    if datetime.now(WITA).weekday() == 6 or is_libur_nasional(datetime.now(WITA)): 
+        return
     status = _load_status()
     sudah, belum, mangkir = [], [], []
 
-    async def _cek_user(cid, acc):
+    async def _task(cid, acc):
         key = str(cid)
         masuk = status.get(key, {}).get("masuk", False)
         pulang = status.get(key, {}).get("pulang", False)
+        alias = acc["alias"]
+        julukan = acc["julukan"]
 
         if pulang:
-            sudah.append(acc["alias"])
-            return
+            sudah.append(alias)
+        elif not masuk:
+            mangkir.append(alias)
+            await kirim_pesan_aman(cid, "⚠️ Ngana mangkir atau SKD ini bro 😂")
+            await bot.send_message(ADMIN_ID, f"👤 {julukan} mangkir bro. Nda absen masuk & pulang")
+        else:
+            belum.append(alias)
+            await kirim_pesan_aman(cid, "❗Ngana lupa absen pulang bro❗")
 
-        if not masuk and not pulang:
-            mangkir.append(acc["alias"])
-            try:
-                await kirim_pesan_aman(chat_id=cid, text="⚠️ Ngana mangkir atau SKD ini bro 😂")
-                await bot.send_message(chat_id=ADMIN_ID, text=f"👤 {acc['julukan']} mangkir, nda absen masuk & pulang")
-            except Exception as e:
-                logging.warning(f"Gagal kirim pesan mangkir ke {cid}: {e}")
-            return  # penting supaya tidak lanjut ke "belum"
-
-        belum.append(acc["alias"])
-        try:
-            await kirim_pesan_aman(chat_id=cid, text="❗Ngana lupa absen pulang bro❗")
-        except Exception as e:
-            logging.warning(f"Gagal kirim pesan lupa pulang ke {cid}: {e}")
-
-    await asyncio.gather(*[_cek_user(cid, acc) for cid, acc in PENGGUNA.items()])
+    await asyncio.gather(*[_task(cid, acc) for cid, acc in PENGGUNA.items()])
     _save_status(status)
 
-    # Buat laporan ke admin
-    sudah.sort()
-    belum.sort()
-    mangkir.sort()
+    summary = (
+        "📋 <b>Ringkasan Lupa Absen Pulang:</b>\n\n"
+        f"✅ <b>Sudah:</b>\n{chr(10).join(sudah) or 'Tidak ada'}\n\n"
+        f"❌ <b>Belum:</b>\n{chr(10).join(belum) or 'Tidak ada'}\n\n"
+        f"⚠️ <b>Mangkir:</b>\n{chr(10).join(mangkir) or 'Tidak ada'}"
+    )
+    await bot.send_message(chat_id=ADMIN_ID, text=summary, parse_mode=ParseMode.HTML)
 
-    pesan = "📋 <b>Ringkasan Lupa Absen Pulang:</b>\n\n"
-    pesan += "✅ <b>Sudah absen:</b>\n" + ("\n".join(sudah) if sudah else "Tidak ada") + "\n\n"
-    pesan += "❌ <b>Belum absen:</b>\n" + ("\n".join(belum) if belum else "Tidak ada") + "\n\n"
-    pesan += "⚠️ <b>Mangkir:</b>\n" + ("\n".join(mangkir) if mangkir else "Tidak ada")
-
-    try:
-        await bot.send_message(chat_id=ADMIN_ID, text=pesan, parse_mode=ParseMode.HTML)
-    except Exception as e:
-        logging.warning(f"⚠️ Gagal kirim rekap ke admin: {e}")
-
+# 5. PENGINGAT ESS
 async def pengingat():
-    now = datetime.now(WITA)
-    if now.weekday() == 6 or is_libur_nasional(now):
-        logging.info("[Absen Masuk] Dilewati karena hari libur atau Minggu.")
+    if not sudah_memulai(chat_id):
         return
-    
-    status = _load_status()
-    today_str = now.strftime("%d %B %Y")
+    if datetime.now(WITA).weekday() == 6 or is_libur_nasional(datetime.now(WITA)): 
+        return
+    today = datetime.now(WITA).strftime("%d %B %Y")
     tasks = []
 
-    async def _cek_status_user(cid, acc):
+    async def _task(cid, acc):
         try:
             data = await ambil_rekapan_absen_awal_bulan_async(acc["username"], cid)
             for item in data:
-                if item["Tanggal"] == today_str:
-                    status = item["Status"].lower()
-                    if status in ["mangkir", "terlambat", "lupa absen waktu pulang"]:
-                        pesan = (
-                            f"<b>{item['Tanggal']} - {item['Status']}</b>\n"
-                            f"Jangan lupa input ESS Bro ❗❗❗\n"
-                            f"<a href='https://portal.hrindomaret.com/'>🔗 Klik di sini untuk buka portal ESS</a>"
+                if item["Tanggal"] == today:
+                    if item["Status"].lower() in ["mangkir", "terlambat", "lupa absen waktu pulang"]:
+                        await kirim_pesan_aman(
+                            cid,
+                            f"<b>{item['Tanggal']} - {item['Status']}</b>\nJangan lupa input ESS Bro ❗❗❗\n<a href='https://portal.hrindomaret.com/'>🔗 Klik ke ESS</a>",
+                            parse_mode=ParseMode.HTML
                         )
-                        await kirim_pesan_aman(chat_id=cid, text=pesan, parse_mode=ParseMode.HTML)
-                        
                     break
         except Exception as e:
-            logging.warning(f"Gagal cek ESS untuk {acc['alias']}: {e}")
+            logging.warning(f"[ESS Reminder] {acc['alias']}: {e}")
 
     for cid, acc in PENGGUNA.items():
-        tasks.append(_cek_status_user(cid, acc))
-
+        tasks.append(_task(cid, acc))
     await asyncio.gather(*tasks)
     
 async def tutup_semua_session_otomatis():
@@ -772,8 +723,11 @@ async def tutup_semua_session_otomatis():
         pass
 
 async def kirim_overtime_ke_semua():
+    if not sudah_memulai(chat_id):
+        return
     logging.debug("[SPL] Mengirimkan rekap overtime ke semua pengguna...")
     now = datetime.now(WITA)
+    pengguna_dengan_spl = []
 
     for cid, akun in PENGGUNA.items():
         username = akun["username"]
@@ -835,6 +789,22 @@ async def kirim_overtime_ke_semua():
             await bot.send_message(chat_id=ADMIN_ID, text=ringkasan, parse_mode=ParseMode.HTML)
         except Exception as e:
             logging.warning(f"[SPL] Gagal kirim ringkasan ke admin: {e}")
+      
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+
+    started = load_started_users()
+    if chat_id in started:
+        return
+
+    alias = PENGGUNA.get(chat_id, {}).get("alias", "Pengguna")
+    started.add(chat_id)
+    save_started_users(started)
+
+    await update.message.reply_text(
+        f"👋 Selamat datang, {alias}!\nBot sudah aktif untuk kamu.\nGunakan /rekap untuk melihat absensi."
+    )
+    await bot.send_message(ADMIN_ID, f"🆕 Pengguna baru /start: {chat_id} - {alias}")
             
 async def on_startup(app):
     await fetch_libur_nasional()
@@ -918,6 +888,7 @@ if __name__ == "__main__":
 
     async def startup_and_run():
         app = ApplicationBuilder().token(BOT_TOKEN).build()
+        app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("rekap", rekap))
         app.add_handler(CallbackQueryHandler(rekap_absen, pattern="^rekap_absen$"))
         app.add_handler(CallbackQueryHandler(rekap_spl, pattern="^rekap_spl$"))
@@ -949,7 +920,7 @@ if __name__ == "__main__":
             while True:
                 await asyncio.sleep(3600)
         finally:
-            await close_all_sessions()
+            await tutup_semua_session_otomatis()
             await app.shutdown()
             await app.stop()
 
