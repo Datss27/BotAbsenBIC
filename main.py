@@ -402,13 +402,14 @@ state_broadcast = set()
 def format_broadcast_message(pesan: str) -> str:
     tanggal = datetime.now(WITA).strftime('%A, %d %B %Y')
     return (
-        f"<b>📢 Pesan Penting</b>\n"
+        f"<b>📢 Info-Info</b>\n"
         f"🗓️ {tanggal}\n\n"
         f"{pesan}\n\n"
-        f"Salam hangat,\n🤖 Bot Absensi"
+        f"<b>📢 Brando</b>\"
     )
 
 #======= [UCAPAN] =======
+
 async def kirim_ucapan(update: Update):
     ucapan_list = load_ucapan()
     ucapan = random.choice(ucapan_list)
